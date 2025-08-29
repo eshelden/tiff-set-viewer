@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Image Sets</title>
+  <link rel="stylesheet" href="assets/style.css" />
+  <link rel="icon" href="/favicon.ico" sizes="any">
+</head>
+<body data-page="index">
+  <header class="site-header">
+    <h1>Image Sets</h1>
+    <p>Select a set to browse.</p>
+  </header>
+
+  <main id="sets-grid" class="grid"></main>
+
+  <footer class="site-footer">
+
+  </footer>
+
+  <script src="assets/app.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  // Service workers require a secure context: https:// or http://localhost
+  navigator.serviceWorker.register('/sw.js').catch(console.error);
+}
+</script>
+
+</body>
+</html>

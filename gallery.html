@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Gallery</title>
+  <link rel="stylesheet" href="assets/style.css" />
+  <link rel="icon" href="/favicon.ico" sizes="any">
+</head>
+<body data-page="gallery">
+  <header class="site-header">
+    <h1 id="set-title">Gallery</h1>
+    <nav><a class="back-link" href="index.html">&larr; Back to sets</a></nav>
+  </header>
+
+  <main class="viewer">
+    <button id="prev-btn" class="nav-btn" aria-label="Previous image">&#10094;</button>
+    <div class="canvas-wrap">
+      <canvas id="tiff-canvas" aria-label="TIFF image viewer"></canvas>
+      <div class="filename" id="filename"></div>
+    </div>
+    <button id="next-btn" class="nav-btn" aria-label="Next image">&#10095;</button>
+  </main>
+
+  <footer class="site-footer">
+    <div class="url-tools">
+      <button id="copy-link">Copy link to this image</button>
+      <button id="download-source">Download source TIFF</button>
+      <span id="copied" class="copy-status" aria-live="polite"></span>
+    </div>
+  </footer>
+
+  <div class="thumbs" id="thumbs"></div>
+
+
+  <!-- Load UTIF locally for TIFF decoding (place UTIF.js in assets/) -->
+  <script src="assets/UTIF.js"></script>
+  <script src="assets/app.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  // Service workers require a secure context: https:// or http://localhost
+  navigator.serviceWorker.register('/sw.js').catch(console.error);
+}
+</script>
+
+</body>
+</html>
