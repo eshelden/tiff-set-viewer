@@ -16,6 +16,12 @@ function getQueryParam(key) {
   return url.searchParams.get(key);
 }
 
+function fitImageToCanvas(canvas, imgWidth, imgHeight) {
+    const viewW = canvas.clientWidth;
+    const viewH = canvas.clientHeight;
+    return Math.min(viewW / imgWidth, viewH / imgHeight, 1.0);
+}
+
 /* ------------ Manifest loader (per-set only) ------------
    Supports any of:
    1) ["Cnt-0001","Cnt-0002"]
@@ -88,12 +94,47 @@ async function initIndex() {
 }
 
 /* ---------------- TIFF Rendering (viewer) ----------------- */
-async function renderTIFFToCanvas(url, canvas) {
+// Global variables for TIFF image and zoom
+let tiffImageData = null;
+let tiffImageWidth = 0;
+let tiffImageHeight = 0;
+let tiffZoom = 1.0;
+let tiffFitZoom = 1.0; // Add this near your other global TIFF variables
+
+function drawTIFFToCanvas(canvas, zoom = 1.0) {
+    if (!tiffImageData) return;
+    // Set internal pixel size to match display size for sharpness
+    canvas.width = canvas.clientWidth;
+    canvas.height = canvas.clientHeight;
+    const ctx = canvas.getContext("2d");
+
+    // Calculate scaled image size
+    const imgW = tiffImageWidth * zoom;
+    const imgH = tiffImageHeight * zoom;
+
+    // Center the image
+    const offsetX = (canvas.width - imgW) / 2;
+    const offsetY = (canvas.height - imgH) / 2;
+
+    // Draw
+    const off = document.createElement('canvas');
+    off.width = tiffImageWidth;
+    off.height = tiffImageHeight;
+    off.getContext('2d').putImageData(tiffImageData, 0, 0);
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(off, 0, 0, tiffImageWidth, tiffImageHeight, offsetX, offsetY, imgW, imgH);
+}
+
+async function renderTIFFToCanvas(url, canvas, zoom = 1.0) {
+  // 1. Fetch the TIFF file as an ArrayBuffer
   const resp = await fetch(url, { cache: "no-store" });
   if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${url}`);
   const buf = await resp.arrayBuffer();
 
+  // 2. Check for UTIF.js presence (required for decoding TIFF)
   if (typeof UTIF === "undefined") {
+    // Draw an error message on the canvas if UTIF.js is missing
     const ctx = canvas.getContext("2d");
     canvas.width = 1200; canvas.height = 140;
     ctx.fillStyle = "#111827"; ctx.fillRect(0,0,canvas.width,canvas.height);
@@ -102,9 +143,11 @@ async function renderTIFFToCanvas(url, canvas) {
     throw new Error("UTIF.js missing");
   }
 
+  // 3. Decode the TIFF file into IFDs (Image File Directories)
   const ifds = UTIF.decode(buf);
   if (!ifds || !ifds.length) throw new Error("No IFDs found (unsupported/corrupt TIFF).");
 
+  // 4. Decode image data for each IFD (TIFF can have multiple images/pages)
   if (typeof UTIF.decodeImages === "function") {
     UTIF.decodeImages(buf, ifds);
   } else if (typeof UTIF.decodeImage === "function") {
@@ -113,16 +156,19 @@ async function renderTIFFToCanvas(url, canvas) {
     throw new Error("UTIF.decodeImage(s) not available in this UTIF build.");
   }
 
+  // 5. Get the first image/page
   const first = ifds[0];
-  const rgba = UTIF.toRGBA8(first);
+  const rgba = UTIF.toRGBA8(first); // Convert to RGBA pixel data
   const w = first.width, h = first.height;
   if (!w || !h) throw new Error("Decoded image has no width/height.");
-  const ctx = canvas.getContext("2d");
-  canvas.width = w; canvas.height = h;
-  canvas.style.aspectRatio = `${w} / ${h}`;
 
-  const imgData = new ImageData(new Uint8ClampedArray(rgba), w, h);
-  ctx.putImageData(imgData, 0, 0);
+  // Store for later redraws
+  tiffImageWidth = w;
+  tiffImageHeight = h;
+  tiffImageData = new ImageData(new Uint8ClampedArray(rgba), w, h);
+
+  // Draw at current zoom
+  drawTIFFToCanvas(canvas, zoom);
 }
 
 /* --------------- Gallery (thumbs + copy/download) ----------- */
@@ -209,6 +255,26 @@ async function initGallery() {
   const srcBtn        = document.getElementById("download-source");
   const copied        = document.getElementById("copied");
 
+  // Zoom controls
+  const zoomInBtn = document.getElementById("zoom-in");
+  const zoomOutBtn = document.getElementById("zoom-out");
+  const zoomLabel = document.getElementById("zoom-label");
+
+  function updateZoomLabel() {
+    if (zoomLabel) zoomLabel.textContent = `${Math.round(tiffZoom * 100)}%`;
+  }
+
+  if (zoomInBtn) zoomInBtn.addEventListener("click", () => {
+    tiffZoom = Math.min(tiffZoom * 1.25, 8.0); // max 800%
+    drawTIFFToCanvas(canvas, tiffZoom);
+    updateZoomLabel();
+  });
+  if (zoomOutBtn) zoomOutBtn.addEventListener("click", () => {
+    tiffZoom = Math.max(tiffZoom / 1.25, 0.1); // min 10%
+    drawTIFFToCanvas(canvas, tiffZoom);
+    updateZoomLabel();
+  });
+
   if (setTitle) setTitle.textContent = set.title;
 
   function flash(msg){
@@ -220,34 +286,43 @@ async function initGallery() {
   let thumbsBuilt = false;
   let lastActionWasTile = false;
 
-  async function loadCurrent() {
-    const relPath = set.basePath.replace(/\/+$/,'') + '/' + set.images[imgIndex - 1];
+async function loadCurrent() {
+    const relPath = set.basePath.replace(/\/+$/, '') + '/' + set.images[imgIndex - 1];
     if (filenameLabel) filenameLabel.textContent = relPath;
 
     try {
-      await renderTIFFToCanvas(relPath, canvas);
+        await renderTIFFToCanvas(relPath, canvas, 1.0); // Always load at 100% to get image size
+
+        // Calculate zoom to fit image in canvas
+        // tiffZoom = fitImageToCanvas(canvas, tiffImageWidth, tiffImageHeight);
+        tiffFitZoom = fitImageToCanvas(canvas, tiffImageWidth, tiffImageHeight);
+        tiffZoom = tiffFitZoom; // Set current zoom to fit on load
+
+        // Draw at the calculated zoom
+        drawTIFFToCanvas(canvas, tiffZoom);
+        updateZoomLabel();
     } catch (e) {
-      console.error("Render error:", e);
-      const ctx = canvas.getContext("2d");
-      canvas.width = 1200; canvas.height = 140;
-      ctx.fillStyle = "#111827"; ctx.fillRect(0,0,canvas.width,canvas.height);
-      ctx.fillStyle = "#f9fafb"; ctx.font = "16px system-ui, sans-serif";
-      ctx.fillText(`Error rendering ${relPath}: ${e && e.message ? e.message : e}`, 14, 70);
+        console.error("Render error:", e);
+        const ctx = canvas.getContext("2d");
+        canvas.width = 1200; canvas.height = 140;
+        ctx.fillStyle = "#111827"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#f9fafb"; ctx.font = "16px system-ui, sans-serif";
+        ctx.fillText(`Error rendering ${relPath}: ${e && e.message ? e.message : e}`, 14, 70);
     }
 
     if (!thumbsBuilt) {
-      buildThumbs(thumbs, set, imgIndex, (n) => { lastActionWasTile = true; imgIndex = n; loadCurrent(); });
-      thumbsBuilt = true;
+        buildThumbs(thumbs, set, imgIndex, (n) => { lastActionWasTile = true; imgIndex = n; loadCurrent(); });
+        thumbsBuilt = true;
     } else {
-      highlightThumbs(thumbs, imgIndex, lastActionWasTile);
-      lastActionWasTile = false;
+        highlightThumbs(thumbs, imgIndex, lastActionWasTile);
+        lastActionWasTile = false;
     }
 
     const url = new URL(window.location.href);
     url.searchParams.set("img", String(imgIndex));
     history.replaceState({}, "", url.toString());
     document.title = `${set.title} – Image ${imgIndex}/${total}`;
-  }
+}
 
   async function go(delta) {
     imgIndex += delta;
@@ -258,8 +333,16 @@ async function initGallery() {
 
   const prevBtn = document.getElementById("prev-btn");
   const nextBtn = document.getElementById("next-btn");
+  const zoomResetBtn = document.getElementById("zoom-reset");
   if (prevBtn) prevBtn.addEventListener("click", () => { lastActionWasTile = false; go(-1); });
   if (nextBtn) nextBtn.addEventListener("click", () => { lastActionWasTile = false; go(1); });
+
+  if (zoomResetBtn) zoomResetBtn.addEventListener("click", () => {
+    tiffZoom = tiffFitZoom;
+    drawTIFFToCanvas(canvas, tiffZoom);
+    updateZoomLabel();
+  });
+
   window.addEventListener("keydown", (e) => {
     if (e.key === "ArrowLeft") { lastActionWasTile = false; go(-1); }
     if (e.key === "ArrowRight") { lastActionWasTile = false; go(1); }

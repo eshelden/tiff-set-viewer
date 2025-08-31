@@ -1,4 +1,3 @@
-
 :root{
   --bg:#0b1016;
   --card:#111827;
@@ -77,27 +76,29 @@ body{
   align-items:center;
   gap:1rem;
 }
-.canvas-wrap{
-  position:relative;
-  background:#0f172a;
-  border:1px solid #1f2937;
-  border-radius:1rem;
-  min-height:360px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  padding:1rem;
+
+.canvas-wrap {
+    width: 100%;
+    height: 70vh; /* or any preferred height */
+    min-height: 360px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    background: #0f172a;
+    border: 1px solid #1f2937;
+    border-radius: 1rem;
+    padding: 1rem;
+    overflow: hidden;
 }
 
 #tiff-canvas {
-  display: block;
-  width: auto;       /* don’t stretch to 100% width if you want square images */
-  height: auto;      /* keep natural aspect ratio */
-  max-width: 100%;   /* scale down if container is smaller */
-  max-height: 70vh;  /* scale down if window is short */
-  image-rendering: pixelated;
+    width: 100%;
+    height: 100%;
+    display: block;
+    image-rendering: pixelated;
+    border: 2px solid white;
 }
-
 
 .filename{
   position:absolute;
