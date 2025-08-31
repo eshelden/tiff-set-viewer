@@ -101,20 +101,41 @@ let tiffImageHeight = 0;
 let tiffZoom = 1.0;
 let tiffFitZoom = 1.0; // Add this near your other global TIFF variables
 
+// --- Add these global variables near your other TIFF globals ---
+let panX = 0; // Center of view in image coordinates (x)
+let panY = 0; // Center of view in image coordinates (y)
+let isPanning = false;
+let lastMouseX = 0, lastMouseY = 0;
+
+function clampPan(pan, imgSize, viewSize, zoom) {
+    const halfView = viewSize / (2 * zoom);
+    if (imgSize * zoom < viewSize) {
+        // Image is smaller than view, keep centered
+        return imgSize / 2;
+    }
+    return Math.max(halfView, Math.min(imgSize - halfView, pan));
+}
+
+// --- Updated drawTIFFToCanvas with panning and clamping ---
 function drawTIFFToCanvas(canvas, zoom = 1.0) {
     if (!tiffImageData) return;
-    // Set internal pixel size to match display size for sharpness
     canvas.width = canvas.clientWidth;
     canvas.height = canvas.clientHeight;
     const ctx = canvas.getContext("2d");
+
+    // Clamp pan to keep image in view
+    panX = clampPan(panX, tiffImageWidth, canvas.width, zoom);
+    panY = clampPan(panY, tiffImageHeight, canvas.height, zoom);
 
     // Calculate scaled image size
     const imgW = tiffImageWidth * zoom;
     const imgH = tiffImageHeight * zoom;
 
-    // Center the image
-    const offsetX = (canvas.width - imgW) / 2;
-    const offsetY = (canvas.height - imgH) / 2;
+    // Calculate where to draw the image so that (panX, panY) is at the center of the canvas
+    const centerX = panX * zoom;
+    const centerY = panY * zoom;
+    const offsetX = canvas.width / 2 - centerX;
+    const offsetY = canvas.height / 2 - centerY;
 
     // Draw
     const off = document.createElement('canvas');
@@ -124,6 +145,7 @@ function drawTIFFToCanvas(canvas, zoom = 1.0) {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(off, 0, 0, tiffImageWidth, tiffImageHeight, offsetX, offsetY, imgW, imgH);
+
 }
 
 async function renderTIFFToCanvas(url, canvas, zoom = 1.0) {
@@ -214,166 +236,220 @@ function highlightThumbs(container, activeIndex, shouldScroll = false) {
   });
 }
 
+
 async function initGallery() {
-  const setId = getQueryParam("set");
-  let imgIndex = parseInt(getQueryParam("img") || "1", 10);
-  if (!Number.isFinite(imgIndex) || imgIndex < 1) imgIndex = 1;
+    const setId = getQueryParam("set");
+    let imgIndex = parseInt(getQueryParam("img") || "1", 10);
+    if (!Number.isFinite(imgIndex) || imgIndex < 1) imgIndex = 1;
 
-  let sets;
-  try {
-    sets = await loadJSON("data/sets.json");
-  } catch (e) {
-    console.error("Failed to load sets.json:", e);
-    const t = document.getElementById("set-title");
-    if (t) t.textContent = "Error: cannot load sets.json";
-    return;
-  }
-  const set = sets.find(s => s.id === setId);
-  if (!set) { const t = document.getElementById("set-title"); if (t) t.textContent = "Set not found"; return; }
-
-  // Manifest required (no probing)
-  console.info("[gallery] set:", setId, "basePath:", set.basePath);
-  const manifestImages = await loadManifestList(set.basePath);
-  if (!manifestImages || !manifestImages.length) {
-    const t = document.getElementById("set-title");
-    if (t) t.textContent = "No manifest.json or empty manifest in " + set.basePath;
-    console.warn("[gallery] Manifest missing or empty at", set.basePath + "/manifest.json");
-    return;
-  }
-  console.info("[gallery] Using manifest with", manifestImages.length, "images");
-  set.images = manifestImages;
-
-  const total = set.images.length || 0;
-  if (total === 0) { const t = document.getElementById("set-title"); if (t) t.textContent = `${set.title} (no images)`; return; }
-  if (imgIndex > total) imgIndex = total;
-
-  const canvas        = document.getElementById("tiff-canvas");
-  const filenameLabel = document.getElementById("filename");
-  const thumbs        = document.getElementById("thumbs");
-  const setTitle      = document.getElementById("set-title");
-  const copyBtn       = document.getElementById("copy-link");
-  const srcBtn        = document.getElementById("download-source");
-  const copied        = document.getElementById("copied");
-
-  // Zoom controls
-  const zoomInBtn = document.getElementById("zoom-in");
-  const zoomOutBtn = document.getElementById("zoom-out");
-  const zoomLabel = document.getElementById("zoom-label");
-
-  function updateZoomLabel() {
-    if (zoomLabel) zoomLabel.textContent = `${Math.round(tiffZoom * 100)}%`;
-  }
-
-  if (zoomInBtn) zoomInBtn.addEventListener("click", () => {
-    tiffZoom = Math.min(tiffZoom * 1.25, 8.0); // max 800%
-    drawTIFFToCanvas(canvas, tiffZoom);
-    updateZoomLabel();
-  });
-  if (zoomOutBtn) zoomOutBtn.addEventListener("click", () => {
-    tiffZoom = Math.max(tiffZoom / 1.25, 0.1); // min 10%
-    drawTIFFToCanvas(canvas, tiffZoom);
-    updateZoomLabel();
-  });
-
-  if (setTitle) setTitle.textContent = set.title;
-
-  function flash(msg){
-    if (!copied) return;
-    copied.textContent = msg;
-    setTimeout(()=>copied.textContent="",1400);
-  }
-
-  let thumbsBuilt = false;
-  let lastActionWasTile = false;
-
-async function loadCurrent() {
-    const relPath = set.basePath.replace(/\/+$/, '') + '/' + set.images[imgIndex - 1];
-    if (filenameLabel) filenameLabel.textContent = relPath;
-
+    let sets;
     try {
-        await renderTIFFToCanvas(relPath, canvas, 1.0); // Always load at 100% to get image size
+        sets = await loadJSON("data/sets.json");
+    } catch (e) {
+        console.error("Failed to load sets.json:", e);
+        const t = document.getElementById("set-title");
+        if (t) t.textContent = "Error: cannot load sets.json";
+        return;
+    }
+    const set = sets.find(s => s.id === setId);
+    if (!set) { const t = document.getElementById("set-title"); if (t) t.textContent = "Set not found"; return; }
 
-        // Calculate zoom to fit image in canvas
-        // tiffZoom = fitImageToCanvas(canvas, tiffImageWidth, tiffImageHeight);
-        tiffFitZoom = fitImageToCanvas(canvas, tiffImageWidth, tiffImageHeight);
-        tiffZoom = tiffFitZoom; // Set current zoom to fit on load
+    // Manifest required (no probing)
+    console.info("[gallery] set:", setId, "basePath:", set.basePath);
+    const manifestImages = await loadManifestList(set.basePath);
+    if (!manifestImages || !manifestImages.length) {
+        const t = document.getElementById("set-title");
+        if (t) t.textContent = "No manifest.json or empty manifest in " + set.basePath;
+        console.warn("[gallery] Manifest missing or empty at", set.basePath + "/manifest.json");
+        return;
+    }
+    console.info("[gallery] Using manifest with", manifestImages.length, "images");
+    set.images = manifestImages;
 
-        // Draw at the calculated zoom
+    const total = set.images.length || 0;
+    if (total === 0) { const t = document.getElementById("set-title"); if (t) t.textContent = `${set.title} (no images)`; return; }
+    if (imgIndex > total) imgIndex = total;
+
+    const canvas = document.getElementById("tiff-canvas");
+    const filenameLabel = document.getElementById("filename");
+    const thumbs = document.getElementById("thumbs");
+    const setTitle = document.getElementById("set-title");
+    const copyBtn = document.getElementById("copy-link");
+    const srcBtn = document.getElementById("download-source");
+    const copied = document.getElementById("copied");
+
+    // Zoom controls
+    const zoomInBtn = document.getElementById("zoom-in");
+    const zoomOutBtn = document.getElementById("zoom-out");
+    const zoomLabel = document.getElementById("zoom-label");
+    const zoomResetBtn = document.getElementById("zoom-reset");
+
+    function updateZoomLabel() {
+        if (zoomLabel) zoomLabel.textContent = `${Math.round(tiffZoom * 100)}%`;
+    }
+
+    function zoomAtCanvasCenter(newZoom) {
+        const canvas = document.getElementById("tiff-canvas");
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2;
+        // Calculate the image coordinate currently at the center of the canvas
+        const imgX = (cx - (canvas.width / 2 - panX * tiffZoom)) / tiffZoom;
+        const imgY = (cy - (canvas.height / 2 - panY * tiffZoom)) / tiffZoom;
+        // Now, after zoom, set panX/panY so that this image coordinate is still at the center
+        tiffZoom = newZoom;
+        panX = imgX;
+        panY = imgY;
         drawTIFFToCanvas(canvas, tiffZoom);
         updateZoomLabel();
-    } catch (e) {
-        console.error("Render error:", e);
-        const ctx = canvas.getContext("2d");
-        canvas.width = 1200; canvas.height = 140;
-        ctx.fillStyle = "#111827"; ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = "#f9fafb"; ctx.font = "16px system-ui, sans-serif";
-        ctx.fillText(`Error rendering ${relPath}: ${e && e.message ? e.message : e}`, 14, 70);
     }
 
-    if (!thumbsBuilt) {
-        buildThumbs(thumbs, set, imgIndex, (n) => { lastActionWasTile = true; imgIndex = n; loadCurrent(); });
-        thumbsBuilt = true;
-    } else {
-        highlightThumbs(thumbs, imgIndex, lastActionWasTile);
-        lastActionWasTile = false;
+    // --- Panning state ---
+    let isPanning = false;
+    let lastMouseX = 0, lastMouseY = 0;
+
+    // --- Mouse events for panning ---
+    canvas.addEventListener('mousedown', (e) => {
+        isPanning = true;
+        lastMouseX = e.clientX;
+        lastMouseY = e.clientY;
+        canvas.style.cursor = 'grabbing';
+    });
+    window.addEventListener('mousemove', (e) => {
+        if (!isPanning) return;
+        const dx = (e.clientX - lastMouseX) / tiffZoom;
+        const dy = (e.clientY - lastMouseY) / tiffZoom;
+        panX -= dx;
+        panY -= dy;
+        lastMouseX = e.clientX;
+        lastMouseY = e.clientY;
+        drawTIFFToCanvas(canvas, tiffZoom);
+    });
+    window.addEventListener('mouseup', () => {
+        isPanning = false;
+        canvas.style.cursor = '';
+    });
+
+    // --- On zoom reset, also center pan ---
+    if (zoomResetBtn) zoomResetBtn.addEventListener("click", () => {
+        tiffZoom = tiffFitZoom;
+        panX = tiffImageWidth / 2;
+        panY = tiffImageHeight / 2;
+        drawTIFFToCanvas(canvas, tiffZoom);
+        updateZoomLabel();
+    });
+
+    if (zoomInBtn) zoomInBtn.addEventListener("click", () => {
+        const newZoom = Math.min(tiffZoom * 1.25, 8.0);
+        zoomAtCanvasCenter(newZoom);
+    });
+    if (zoomOutBtn) zoomOutBtn.addEventListener("click", () => {
+        const newZoom = Math.max(tiffZoom / 1.25, 0.1);
+        zoomAtCanvasCenter(newZoom);
+    });
+
+    if (setTitle) setTitle.textContent = set.title;
+
+    function flash(msg) {
+        if (!copied) return;
+        copied.textContent = msg;
+        setTimeout(() => copied.textContent = "", 1400);
     }
 
-    const url = new URL(window.location.href);
-    url.searchParams.set("img", String(imgIndex));
-    history.replaceState({}, "", url.toString());
-    document.title = `${set.title} – Image ${imgIndex}/${total}`;
-}
+    let thumbsBuilt = false;
+    let lastActionWasTile = false;
 
-  async function go(delta) {
-    imgIndex += delta;
-    if (imgIndex < 1) imgIndex = 1;
-    if (imgIndex > total) imgIndex = total;
+    // --- On image load or reset, center the image ---
+    async function loadCurrent() {
+        const relPath = set.basePath.replace(/\/+$/, '') + '/' + set.images[imgIndex - 1];
+        if (filenameLabel) filenameLabel.textContent = relPath;
+
+        try {
+            await renderTIFFToCanvas(relPath, canvas, 1.0); // Load at 100% to get image size
+
+            // Calculate and store the fit-to-view zoom
+            tiffFitZoom = fitImageToCanvas(canvas, tiffImageWidth, tiffImageHeight);
+            tiffZoom = tiffFitZoom;
+
+            // Center pan
+            panX = tiffImageWidth / 2;
+            panY = tiffImageHeight / 2;
+
+            // Add these logs:
+            //console.log("tiffImageWidth:", tiffImageWidth);
+            //console.log("tiffImageHeight:", tiffImageHeight);
+            //console.log("canvas.clientWidth:", canvas.clientWidth, "canvas.clientHeight:", canvas.clientHeight);
+            //console.log("tiffZoom:", tiffZoom);
+            //console.log("panX:", panX, "panY:", panY);
+
+            // Draw once, now that all values are set
+            drawTIFFToCanvas(canvas, tiffZoom);
+            updateZoomLabel();
+        } catch (e) {
+            console.error("Render error:", e);
+            const ctx = canvas.getContext("2d");
+            canvas.width = 1200; canvas.height = 140;
+            ctx.fillStyle = "#111827"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = "#f9fafb"; ctx.font = "16px system-ui, sans-serif";
+            ctx.fillText(`Error rendering ${relPath}: ${e && e.message ? e.message : e}`, 14, 70);
+        }
+
+        if (!thumbsBuilt) {
+            buildThumbs(thumbs, set, imgIndex, (n) => { lastActionWasTile = true; imgIndex = n; loadCurrent(); });
+            thumbsBuilt = true;
+        } else {
+            highlightThumbs(thumbs, imgIndex, lastActionWasTile);
+            lastActionWasTile = false;
+        }
+
+        const url = new URL(window.location.href);
+        url.searchParams.set("img", String(imgIndex));
+        history.replaceState({}, "", url.toString());
+        document.title = `${set.title} – Image ${imgIndex}/${total}`;
+    }
+
+    async function go(delta) {
+        imgIndex += delta;
+        if (imgIndex < 1) imgIndex = 1;
+        if (imgIndex > total) imgIndex = total;
+        await loadCurrent();
+    }
+
+    const prevBtn = document.getElementById("prev-btn");
+    const nextBtn = document.getElementById("next-btn");
+    if (prevBtn) prevBtn.addEventListener("click", () => { lastActionWasTile = false; go(-1); });
+    if (nextBtn) nextBtn.addEventListener("click", () => { lastActionWasTile = false; go(1); });
+
+    window.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowLeft") { lastActionWasTile = false; go(-1); }
+        if (e.key === "ArrowRight") { lastActionWasTile = false; go(1); }
+    });
+
+    if (copyBtn) {
+        copyBtn.addEventListener("click", async () => {
+            try {
+                await navigator.clipboard.writeText(window.location.href);
+                flash("Link copied!");
+            } catch (e) {
+                console.error("Copy link failed:", e);
+                alert("Copy link failed: " + (e.message || e));
+            }
+        });
+    }
+
+    if (srcBtn) {
+        srcBtn.addEventListener("click", () => {
+            const relPath = set.basePath.replace(/\/+$/, '') + '/' + set.images[imgIndex - 1];
+            const a = document.createElement('a');
+            a.href = relPath;
+            a.download = relPath.split('/').pop();
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            flash("Downloading source TIFF...");
+        });
+    }
+
     await loadCurrent();
-  }
-
-  const prevBtn = document.getElementById("prev-btn");
-  const nextBtn = document.getElementById("next-btn");
-  const zoomResetBtn = document.getElementById("zoom-reset");
-  if (prevBtn) prevBtn.addEventListener("click", () => { lastActionWasTile = false; go(-1); });
-  if (nextBtn) nextBtn.addEventListener("click", () => { lastActionWasTile = false; go(1); });
-
-  if (zoomResetBtn) zoomResetBtn.addEventListener("click", () => {
-    tiffZoom = tiffFitZoom;
-    drawTIFFToCanvas(canvas, tiffZoom);
-    updateZoomLabel();
-  });
-
-  window.addEventListener("keydown", (e) => {
-    if (e.key === "ArrowLeft") { lastActionWasTile = false; go(-1); }
-    if (e.key === "ArrowRight") { lastActionWasTile = false; go(1); }
-  });
-
-  if (copyBtn) {
-    copyBtn.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(window.location.href);
-        flash("Link copied!");
-      } catch (e) {
-        console.error("Copy link failed:", e);
-        alert("Copy link failed: " + (e.message || e));
-      }
-    });
-  }
-
-  if (srcBtn) {
-    srcBtn.addEventListener("click", () => {
-      const relPath = set.basePath.replace(/\/+$/,'') + '/' + set.images[imgIndex - 1];
-      const a = document.createElement('a');
-      a.href = relPath;
-      a.download = relPath.split('/').pop();
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      flash("Downloading source TIFF...");
-    });
-  }
-
-  await loadCurrent();
 }
 
 /* ------------------------- Boot --------------------------- */
@@ -398,3 +474,4 @@ async function loadCurrent() {
     }
   }
 })();
+
