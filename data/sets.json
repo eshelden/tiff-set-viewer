@@ -4,14 +4,14 @@
     "title": "Set 1 \u2013 Control Cells",
     "description": "A set of TIFF images.",
     "thumbnail": "images/set1/thumbnail.jpg",
-    "basePath": "images/set1",
+    "basePath": "images/set1"
   },
   {
     "id": "set2",
     "title": "Set 2 \u2013 Treated Cells",
     "description": "Another set of TIFF images.",
     "thumbnail": "images/set2/thumbnail.jpg",
-    "basePath": "images/set2",
+    "basePath": "images/set2"
   },
   {
     "id": "set3",
