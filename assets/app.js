@@ -107,6 +107,20 @@ let panY = 0; // Center of view in image coordinates (y)
 let isPanning = false;
 let lastMouseX = 0, lastMouseY = 0;
 
+// Channel toggle state: [R, G, B]
+let channelEnabled = [true, true, true];
+
+//#############################################################
+function updateChannelButtons() {
+    const redBtn = document.getElementById("toggle-red");
+    const greenBtn = document.getElementById("toggle-green");
+    const blueBtn = document.getElementById("toggle-blue");
+    if (redBtn) redBtn.classList.toggle("off", !channelEnabled[0]);
+    if (greenBtn) greenBtn.classList.toggle("off", !channelEnabled[1]);
+    if (blueBtn) blueBtn.classList.toggle("off", !channelEnabled[2]);
+}
+//#############################################################
+
 function clampPan(pan, imgSize, viewSize, zoom) {
     const halfView = viewSize / (2 * zoom);
     if (imgSize * zoom < viewSize) {
@@ -141,7 +155,24 @@ function drawTIFFToCanvas(canvas, zoom = 1.0) {
     const off = document.createElement('canvas');
     off.width = tiffImageWidth;
     off.height = tiffImageHeight;
-    off.getContext('2d').putImageData(tiffImageData, 0, 0);
+    //off.getContext('2d').putImageData(tiffImageData, 0, 0);
+    //#############################################################################
+    // Code added to handle drawing channels.
+    const ctxOff = off.getContext('2d');
+    let imgData = tiffImageData;
+
+    // Apply channel masking if RGB
+    if (imgData && imgData.data.length === tiffImageWidth * tiffImageHeight * 4) {
+        const d = new Uint8ClampedArray(imgData.data); // copy
+        for (let i = 0; i < d.length; i += 4) {
+            if (!channelEnabled[0]) d[i] = 0;     // R
+            if (!channelEnabled[1]) d[i + 1] = 0; // G
+            if (!channelEnabled[2]) d[i + 2] = 0; // B
+        }
+        imgData = new ImageData(d, tiffImageWidth, tiffImageHeight);
+    }
+    ctxOff.putImageData(imgData, 0, 0);
+    //#############################################################################
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(off, 0, 0, tiffImageWidth, tiffImageHeight, offsetX, offsetY, imgW, imgH);
@@ -374,6 +405,10 @@ async function initGallery() {
             panX = tiffImageWidth / 2;
             panY = tiffImageHeight / 2;
 
+            // Reset channels to all on when loading a new image
+            channelEnabled = [true, true, true];
+            updateChannelButtons();
+
             // Add these logs:
             //console.log("tiffImageWidth:", tiffImageWidth);
             //console.log("tiffImageHeight:", tiffImageHeight);
@@ -448,6 +483,38 @@ async function initGallery() {
             flash("Downloading source TIFF...");
         });
     }
+
+    //##########################################################################
+    //Code to initialize channel toggle buttons
+    const redBtn = document.getElementById("toggle-red");
+    const greenBtn = document.getElementById("toggle-green");
+    const blueBtn = document.getElementById("toggle-blue");
+
+    function updateChannelButtons() {
+        if (redBtn) redBtn.classList.toggle("off", !channelEnabled[0]);
+        if (greenBtn) greenBtn.classList.toggle("off", !channelEnabled[1]);
+        if (blueBtn) blueBtn.classList.toggle("off", !channelEnabled[2]);
+    }
+
+    if (redBtn) redBtn.addEventListener("click", () => {
+        channelEnabled[0] = !channelEnabled[0];
+        drawTIFFToCanvas(canvas, tiffZoom);
+        updateChannelButtons();
+    });
+    if (greenBtn) greenBtn.addEventListener("click", () => {
+        channelEnabled[1] = !channelEnabled[1];
+        drawTIFFToCanvas(canvas, tiffZoom);
+        updateChannelButtons();
+    });
+    if (blueBtn) blueBtn.addEventListener("click", () => {
+        channelEnabled[2] = !channelEnabled[2];
+        drawTIFFToCanvas(canvas, tiffZoom);
+        updateChannelButtons();
+    });
+
+    // Call once after image load
+    updateChannelButtons();
+    //##########################################################################
 
     await loadCurrent();
 }

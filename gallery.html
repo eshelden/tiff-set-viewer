@@ -14,12 +14,19 @@
   </header>
 
   <main class="viewer">
-    <button id="prev-btn" class="nav-btn" aria-label="Previous image">&#10094;</button>
-    <div class="canvas-wrap">
-      <canvas id="tiff-canvas" aria-label="TIFF image viewer"></canvas>
-      <div class="filename" id="filename"></div>
-    </div>
-    <button id="next-btn" class="nav-btn" aria-label="Next image">&#10095;</button>
+      <button id="prev-btn" class="nav-btn" aria-label="Previous image">&#10094;</button>
+      <div class="canvas-wrap">
+          <canvas id="tiff-canvas" aria-label="TIFF image viewer"></canvas>
+          <div class="filename" id="filename"></div>
+      </div>
+      <button id="next-btn" class="nav-btn" aria-label="Next image">&#10095;</button>
+
+      <!-- Add this near the bottom of your image viewer area in gallery.html -->
+      <div class="channel-toggle-group">
+          <button id="toggle-red" class="channel-btn" title="Toggle Red"></button>
+          <button id="toggle-green" class="channel-btn" title="Toggle Green"></button>
+          <button id="toggle-blue" class="channel-btn" title="Toggle Blue"></button>
+      </div>
   </main>
 
   <footer class="site-footer">
