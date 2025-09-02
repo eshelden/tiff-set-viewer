@@ -19,5 +19,12 @@
     "description": "More control images.",
     "basePath": "images/set3",
     "thumbnail": "images/set3/thumbnail.jpg"
+  },
+  {
+    "id": "set4",
+    "title": "Set 4",
+    "description": "Some brightfield images.",
+    "basePath": "images/set4",
+    "thumbnail": "images/set4/thumbnail.jpg"
   }
 ]
