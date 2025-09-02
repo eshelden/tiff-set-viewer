@@ -99,6 +99,7 @@ body{
     image-rendering: pixelated;
     border: 2px solid white;
     cursor: grab;
+    touch-action: none; /* Prevent default touch actions like scrolling */
 }
 
 #tiff-canvas:active {
