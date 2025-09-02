@@ -360,6 +360,35 @@ async function initGallery() {
         canvas.style.cursor = '';
     });
 
+    canvas.addEventListener('wheel', function (e) {
+        e.preventDefault();
+        const zoomFactor = 1.15;
+        let newZoom = tiffZoom;
+        if (e.deltaY < 0) {
+            newZoom = Math.min(tiffZoom * zoomFactor, 8.0);
+        } else if (e.deltaY > 0) {
+            newZoom = Math.max(tiffZoom / zoomFactor, 0.1);
+        }
+        if (newZoom === tiffZoom) return; // No change
+
+        // Get mouse position relative to canvas
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        // Calculate the image coordinates under the mouse before zoom
+        const imgX = (mouseX - (canvas.width / 2 - panX * tiffZoom)) / tiffZoom;
+        const imgY = (mouseY - (canvas.height / 2 - panY * tiffZoom)) / tiffZoom;
+
+        // After zoom, adjust pan so the same image point stays under the cursor
+        panX = ((canvas.width / 2 - mouseX) / newZoom) + imgX;
+        panY = ((canvas.height / 2 - mouseY) / newZoom) + imgY;
+        tiffZoom = newZoom;
+
+        drawTIFFToCanvas(canvas, tiffZoom);
+        updateZoomLabel();
+    }, { passive: false });
+
     // --- On zoom reset, also center pan ---
     if (zoomResetBtn) zoomResetBtn.addEventListener("click", () => {
         tiffZoom = tiffFitZoom;

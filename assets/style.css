@@ -98,6 +98,11 @@ body{
     display: block;
     image-rendering: pixelated;
     border: 2px solid white;
+    cursor: grab;
+}
+
+#tiff-canvas:active {
+    cursor: grabbing;
 }
 
 .filename{
@@ -177,35 +182,6 @@ a.back-link{color:var(--accent)}
 
 /* Image-based thumbnails inside .thumb */
 .thumb img{width:100%;height:100%;object-fit:cover;display:block;}
-
-/*
-.channel-toggle-group {
-  position: absolute;
-  right: 1.5rem;
-  bottom: 1.5rem;
-  display: flex;
-  gap: 0.5rem;
-  z-index: 10;
-}
-
-.channel-btn {
-  width: 32px;
-  height: 32px;
-  border: none;
-  outline: none;
-  cursor: pointer;
-  background: black;
-  transition: background 0.2s;
-  border-radius: 4px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.12);
-  padding: 0;
-}
-.channel-btn#toggle-red   { background: #ef4444; }
-.channel-btn#toggle-green { background: #22c55e; }
-.channel-btn#toggle-blue  { background: #3b82f6; }
-.channel-btn.off { background: #111; }
-
-    */
 
 .viewer-controls {
     display: flex;
