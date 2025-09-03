@@ -112,7 +112,11 @@ let lastMouseX = 0, lastMouseY = 0;
 let channelEnabled = [true, true, true];
 
 let rasterImage = null; // For JPEG/PNG images
+let maskedRasterCanvas = null;
+let lastRasterChannels = [true, true, true];
 
+let maskedTiffCanvas = null;
+let lastTiffChannels = [true, true, true];
 //#############################################################
 function updateChannelButtons() {
     const redBtn = document.getElementById("toggle-red");
@@ -138,11 +142,9 @@ function drawTIFFToCanvas(canvas, zoom = 1.0) {
     canvas.width = canvas.clientWidth;
     canvas.height = canvas.clientHeight;
 
-    // Clamp pan to keep image in view
     panX = clampPan(panX, tiffImageWidth, canvas.width, zoom);
     panY = clampPan(panY, tiffImageHeight, canvas.height, zoom);
 
-    // Calculate scaled image size
     const imgW = tiffImageWidth * zoom;
     const imgH = tiffImageHeight * zoom;
     const centerX = panX * zoom;
@@ -154,33 +156,73 @@ function drawTIFFToCanvas(canvas, zoom = 1.0) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     if (tiffImageData) {
-        // TIFF: use offscreen canvas for channel masking
-        const off = document.createElement('canvas');
-        off.width = tiffImageWidth;
-        off.height = tiffImageHeight;
-        const ctxOff = off.getContext('2d');
-        let imgData = tiffImageData;
+        // Only re-generate masked canvas if channels or image changed
+        if (
+            !maskedTiffCanvas ||
+            lastTiffChannels[0] !== channelEnabled[0] ||
+            lastTiffChannels[1] !== channelEnabled[1] ||
+            lastTiffChannels[2] !== channelEnabled[2]
+        ) {
+            maskedTiffCanvas = document.createElement('canvas');
+            maskedTiffCanvas.width = tiffImageWidth;
+            maskedTiffCanvas.height = tiffImageHeight;
+            const ctxOff = maskedTiffCanvas.getContext('2d');
+            let imgData = tiffImageData;
 
-        // Apply channel masking if RGB
-        if (imgData && imgData.data.length === tiffImageWidth * tiffImageHeight * 4) {
-            const d = new Uint8ClampedArray(imgData.data); // copy
+            // Apply channel masking if RGB
+            if (imgData && imgData.data.length === tiffImageWidth * tiffImageHeight * 4) {
+                const d = new Uint8ClampedArray(imgData.data); // copy
+                for (let i = 0; i < d.length; i += 4) {
+                    if (!channelEnabled[0]) d[i] = 0;     // R
+                    if (!channelEnabled[1]) d[i + 1] = 0; // G
+                    if (!channelEnabled[2]) d[i + 2] = 0; // B
+                }
+                imgData = new ImageData(d, tiffImageWidth, tiffImageHeight);
+            }
+            ctxOff.putImageData(imgData, 0, 0);
+            lastTiffChannels = [...channelEnabled];
+        }
+        ctx.drawImage(
+            maskedTiffCanvas,
+            0, 0, tiffImageWidth, tiffImageHeight,
+            offsetX, offsetY, imgW, imgH
+        );
+    } else if (rasterImage) {
+        // Only re-generate masked canvas if channels or image changed
+        if (
+            !maskedRasterCanvas ||
+            lastRasterChannels[0] !== channelEnabled[0] ||
+            lastRasterChannels[1] !== channelEnabled[1] ||
+            lastRasterChannels[2] !== channelEnabled[2]
+        ) {
+            maskedRasterCanvas = document.createElement('canvas');
+            maskedRasterCanvas.width = tiffImageWidth;
+            maskedRasterCanvas.height = tiffImageHeight;
+            const ctxOff = maskedRasterCanvas.getContext('2d');
+            ctxOff.drawImage(rasterImage, 0, 0, tiffImageWidth, tiffImageHeight);
+
+            let imgData = ctxOff.getImageData(0, 0, tiffImageWidth, tiffImageHeight);
+            const d = imgData.data;
             for (let i = 0; i < d.length; i += 4) {
                 if (!channelEnabled[0]) d[i] = 0;     // R
                 if (!channelEnabled[1]) d[i + 1] = 0; // G
                 if (!channelEnabled[2]) d[i + 2] = 0; // B
             }
-            imgData = new ImageData(d, tiffImageWidth, tiffImageHeight);
+            ctxOff.putImageData(imgData, 0, 0);
+            lastRasterChannels = [...channelEnabled];
         }
-        ctxOff.putImageData(imgData, 0, 0);
-        ctx.drawImage(off, 0, 0, tiffImageWidth, tiffImageHeight, offsetX, offsetY, imgW, imgH);
-    } else if (rasterImage) {
-        // JPEG/PNG: draw directly
-        ctx.drawImage(rasterImage, 0, 0, tiffImageWidth, tiffImageHeight, offsetX, offsetY, imgW, imgH);
+        ctx.drawImage(
+            maskedRasterCanvas,
+            0, 0, tiffImageWidth, tiffImageHeight,
+            offsetX, offsetY, imgW, imgH
+        );
     }
 }
 
 async function renderTIFFToCanvas(url, canvas, zoom = 1.0) {
     rasterImage = null; // Clear any previous JPEG/PNG image
+    maskedTiffCanvas = null;
+    lastTiffChannels = [true, true, true];
   // 1. Fetch the TIFF file as an ArrayBuffer
   const resp = await fetch(url, { cache: "no-store" });
   if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${url}`);
@@ -232,9 +274,9 @@ function buildThumbs(container, set, activeIndex, onSelect) {
     const toJpg = (name) => name.replace(/\.[^.]+$/, ".jpg");
     set.images.forEach((imgName, idx) => {
         // Log before and after conversion for debugging
-        console.log("Thumb original:", imgName);
+        //console.log("Thumb original:", imgName);
         const thumbFile = toJpg(imgName);
-        console.log("Thumb for thumbnail:", thumbFile);
+        //console.log("Thumb for thumbnail:", thumbFile);
 
         const el = document.createElement("button");
         el.className = "thumb" + (idx + 1 === activeIndex ? " active" : "");
@@ -697,7 +739,9 @@ async function renderImageToCanvas(url, canvas) {
             tiffImageWidth = img.naturalWidth;
             tiffImageHeight = img.naturalHeight;
             tiffImageData = null; // Not used for JPEG/PNG
-            rasterImage = img;    // Store the loaded image
+            rasterImage = img;
+            maskedRasterCanvas = null;
+            lastRasterChannels = [true, true, true];    // Store the loaded image
 
             canvas.width = canvas.clientWidth;
             canvas.height = canvas.clientHeight;
