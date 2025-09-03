@@ -470,6 +470,8 @@ async function initGallery() {
             lastTouchDist = null;
             lastTouchCenter = null;
             pinchActive = false; // Reset pinch flag
+            // Prevent immediate pan after pinch by resetting lastPanTouch
+            lastPanTouch = null;
         }
         if (e.touches.length === 0) {
             lastPanTouch = null;
