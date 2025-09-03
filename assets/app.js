@@ -27,6 +27,7 @@ function fitImageToCanvas(canvas, imgWidth, imgHeight) {
    1) ["Cnt-0001","Cnt-0002"]
    2) { basenames: ["Cnt-0001", ...] }
    3) { images: ["Cnt-0001.tif", ...] }
+   4) { images: ["Cnt-0001.jpg", ...] }
 --------------------------------------------------------- */
 async function loadManifestList(basePath) {
     try {
