@@ -1,10 +1,10 @@
 {
-  "basenames": [
-    "Cnt-1",
-    "Cnt-2",
-    "Cnt-3",
-    "Cnt-4",
-    "Cnt-5",
-    "Cnt-6"
+  "images": [
+    "Cnt-1.tif",
+    "Cnt-2.tif",
+    "Cnt-3.jpg",
+    "Cnt-4.tif",
+    "Cnt-5.tif",
+    "Cnt-6.tif"
   ]
 }

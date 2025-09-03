@@ -29,27 +29,28 @@ function fitImageToCanvas(canvas, imgWidth, imgHeight) {
    3) { images: ["Cnt-0001.tif", ...] }
 --------------------------------------------------------- */
 async function loadManifestList(basePath) {
-  try {
-    const res = await fetch(`${basePath}/manifest.json`, { cache: 'no-store' });
-    if (!res.ok) return null;
-    const data = await res.json();
+    try {
+        const res = await fetch(`${basePath}/manifest.json`, { cache: 'no-store' });
+        if (!res.ok) return null;
+        const data = await res.json();
 
-    if (Array.isArray(data)) {
-      if (data.length && /\.[a-z]{2,4}$/i.test(data[0])) {
-        return data.map(s => s.replace(/\.(jpg|jpeg|png)$/i, '.tif'));
-      }
-      return data.map(b => `${b}.tif`);
+        if (Array.isArray(data)) {
+            // Use entries as-is (they must include extension)
+            return data;
+        }
+        if (data && Array.isArray(data.basenames)) {
+            // If you still support basenames, add a warning or error
+            console.warn("Manifest uses 'basenames', but all entries should now include extensions.");
+            return data.basenames; // Or throw an error if you want to enforce extensions
+        }
+        if (data && Array.isArray(data.images)) {
+            // Use entries as-is (they must include extension)
+            return data.images;
+        }
+    } catch (e) {
+        console.warn('Manifest load failed:', e);
     }
-    if (data && Array.isArray(data.basenames)) {
-      return data.basenames.map(b => `${b}.tif`);
-    }
-    if (data && Array.isArray(data.images)) {
-      return data.images.map(s => s.replace(/\.(jpg|jpeg|png)$/i, '.tif'));
-    }
-  } catch (e) {
-    console.warn('Manifest load failed:', e);
-  }
-  return null;
+    return null;
 }
 
 /* ------------ SVG fallback placeholder for cards/thumbs ------------ */
@@ -110,6 +111,8 @@ let lastMouseX = 0, lastMouseY = 0;
 // Channel toggle state: [R, G, B]
 let channelEnabled = [true, true, true];
 
+let rasterImage = null; // For JPEG/PNG images
+
 //#############################################################
 function updateChannelButtons() {
     const redBtn = document.getElementById("toggle-red");
@@ -132,10 +135,8 @@ function clampPan(pan, imgSize, viewSize, zoom) {
 
 // --- Updated drawTIFFToCanvas with panning and clamping ---
 function drawTIFFToCanvas(canvas, zoom = 1.0) {
-    if (!tiffImageData) return;
     canvas.width = canvas.clientWidth;
     canvas.height = canvas.clientHeight;
-    const ctx = canvas.getContext("2d");
 
     // Clamp pan to keep image in view
     panX = clampPan(panX, tiffImageWidth, canvas.width, zoom);
@@ -144,42 +145,42 @@ function drawTIFFToCanvas(canvas, zoom = 1.0) {
     // Calculate scaled image size
     const imgW = tiffImageWidth * zoom;
     const imgH = tiffImageHeight * zoom;
-
-    // Calculate where to draw the image so that (panX, panY) is at the center of the canvas
     const centerX = panX * zoom;
     const centerY = panY * zoom;
     const offsetX = canvas.width / 2 - centerX;
     const offsetY = canvas.height / 2 - centerY;
 
-    // Draw
-    const off = document.createElement('canvas');
-    off.width = tiffImageWidth;
-    off.height = tiffImageHeight;
-    //off.getContext('2d').putImageData(tiffImageData, 0, 0);
-    //#############################################################################
-    // Code added to handle drawing channels.
-    const ctxOff = off.getContext('2d');
-    let imgData = tiffImageData;
-
-    // Apply channel masking if RGB
-    if (imgData && imgData.data.length === tiffImageWidth * tiffImageHeight * 4) {
-        const d = new Uint8ClampedArray(imgData.data); // copy
-        for (let i = 0; i < d.length; i += 4) {
-            if (!channelEnabled[0]) d[i] = 0;     // R
-            if (!channelEnabled[1]) d[i + 1] = 0; // G
-            if (!channelEnabled[2]) d[i + 2] = 0; // B
-        }
-        imgData = new ImageData(d, tiffImageWidth, tiffImageHeight);
-    }
-    ctxOff.putImageData(imgData, 0, 0);
-    //#############################################################################
-
+    const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(off, 0, 0, tiffImageWidth, tiffImageHeight, offsetX, offsetY, imgW, imgH);
 
+    if (tiffImageData) {
+        // TIFF: use offscreen canvas for channel masking
+        const off = document.createElement('canvas');
+        off.width = tiffImageWidth;
+        off.height = tiffImageHeight;
+        const ctxOff = off.getContext('2d');
+        let imgData = tiffImageData;
+
+        // Apply channel masking if RGB
+        if (imgData && imgData.data.length === tiffImageWidth * tiffImageHeight * 4) {
+            const d = new Uint8ClampedArray(imgData.data); // copy
+            for (let i = 0; i < d.length; i += 4) {
+                if (!channelEnabled[0]) d[i] = 0;     // R
+                if (!channelEnabled[1]) d[i + 1] = 0; // G
+                if (!channelEnabled[2]) d[i + 2] = 0; // B
+            }
+            imgData = new ImageData(d, tiffImageWidth, tiffImageHeight);
+        }
+        ctxOff.putImageData(imgData, 0, 0);
+        ctx.drawImage(off, 0, 0, tiffImageWidth, tiffImageHeight, offsetX, offsetY, imgW, imgH);
+    } else if (rasterImage) {
+        // JPEG/PNG: draw directly
+        ctx.drawImage(rasterImage, 0, 0, tiffImageWidth, tiffImageHeight, offsetX, offsetY, imgW, imgH);
+    }
 }
 
 async function renderTIFFToCanvas(url, canvas, zoom = 1.0) {
+    rasterImage = null; // Clear any previous JPEG/PNG image
   // 1. Fetch the TIFF file as an ArrayBuffer
   const resp = await fetch(url, { cache: "no-store" });
   if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${url}`);
@@ -226,34 +227,40 @@ async function renderTIFFToCanvas(url, canvas, zoom = 1.0) {
 
 /* --------------- Gallery (thumbs + copy/download) ----------- */
 function buildThumbs(container, set, activeIndex, onSelect) {
-  container.innerHTML = "";
-  const toJpg = (tif) => tif.replace(/\.tif$/i, ".jpg");
-  set.images.forEach((imgName, idx) => {
-    const el = document.createElement("button");
-    el.className = "thumb" + (idx + 1 === activeIndex ? " active" : "");
-    el.title = imgName;
+    container.innerHTML = "";
+    // Always strip extension and add .jpg for thumbs
+    const toJpg = (name) => name.replace(/\.[^.]+$/, ".jpg");
+    set.images.forEach((imgName, idx) => {
+        // Log before and after conversion for debugging
+        console.log("Thumb original:", imgName);
+        const thumbFile = toJpg(imgName);
+        console.log("Thumb for thumbnail:", thumbFile);
 
-    const thumb = document.createElement("img");
-    thumb.alt = imgName;
-    thumb.loading = (idx < 24) ? "eager" : "lazy";
-    thumb.decoding = "async";
-    thumb.style.visibility = "hidden";
-    thumb.width = 256; thumb.height = 256;
+        const el = document.createElement("button");
+        el.className = "thumb" + (idx + 1 === activeIndex ? " active" : "");
+        el.title = imgName;
 
-    const thumbsPath = `${set.basePath}/thumbs/${toJpg(imgName)}`;
-    thumb.src = thumbsPath;
+        const thumb = document.createElement("img");
+        thumb.alt = imgName;
+        thumb.loading = (idx < 24) ? "eager" : "lazy";
+        thumb.decoding = "async";
+        thumb.style.visibility = "hidden";
+        thumb.width = 256; thumb.height = 256;
 
-    thumb.addEventListener("load", () => { thumb.style.visibility = "visible"; }, { once: true });
-    thumb.onerror = () => {
-      const fallback = set.thumbnail || svgFallbackCard(imgName);
-      thumb.src = fallback;
-      thumb.style.visibility = "visible";
-    };
+        const thumbsPath = `${set.basePath}/thumbs/${thumbFile}`;
+        thumb.src = thumbsPath;
 
-    el.appendChild(thumb);
-    el.addEventListener("click", () => onSelect(idx + 1));
-    container.appendChild(el);
-  });
+        thumb.addEventListener("load", () => { thumb.style.visibility = "visible"; }, { once: true });
+        thumb.onerror = () => {
+            const fallback = set.thumbnail || svgFallbackCard(imgName);
+            thumb.src = fallback;
+            thumb.style.visibility = "visible";
+        };
+
+        el.appendChild(thumb);
+        el.addEventListener("click", () => onSelect(idx + 1));
+        container.appendChild(el);
+    });
 }
 
 function highlightThumbs(container, activeIndex, shouldScroll = false) {
@@ -536,56 +543,52 @@ async function initGallery() {
 
     // --- On image load or reset, center the image ---
     async function loadCurrent() {
-        const relPath = set.basePath.replace(/\/+$/, '') + '/' + set.images[imgIndex - 1];
-        if (filenameLabel) filenameLabel.textContent = relPath;
+    const relPath = set.basePath.replace(/\/+$/, '') + '/' + set.images[imgIndex - 1];
+    if (filenameLabel) filenameLabel.textContent = relPath;
 
-        try {
-            await renderTIFFToCanvas(relPath, canvas, 1.0); // Load at 100% to get image size
+    const ext = relPath.split('.').pop().toLowerCase();
 
-            // Calculate and store the fit-to-view zoom
+    try {
+        if (ext === 'tif' || ext === 'tiff') {
+            await renderTIFFToCanvas(relPath, canvas, 1.0);
             tiffFitZoom = fitImageToCanvas(canvas, tiffImageWidth, tiffImageHeight);
             tiffZoom = tiffFitZoom;
-
-            // Center pan
             panX = tiffImageWidth / 2;
             panY = tiffImageHeight / 2;
-
-            // Reset channels to all on when loading a new image
-            channelEnabled = [true, true, true];
-            updateChannelButtons();
-
-            // Add these logs:
-            //console.log("tiffImageWidth:", tiffImageWidth);
-            //console.log("tiffImageHeight:", tiffImageHeight);
-            //console.log("canvas.clientWidth:", canvas.clientWidth, "canvas.clientHeight:", canvas.clientHeight);
-            //console.log("tiffZoom:", tiffZoom);
-            //console.log("panX:", panX, "panY:", panY);
-
-            // Draw once, now that all values are set
-            drawTIFFToCanvas(canvas, tiffZoom);
-            updateZoomLabel();
-        } catch (e) {
-            console.error("Render error:", e);
-            const ctx = canvas.getContext("2d");
-            canvas.width = 1200; canvas.height = 140;
-            ctx.fillStyle = "#111827"; ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = "#f9fafb"; ctx.font = "16px system-ui, sans-serif";
-            ctx.fillText(`Error rendering ${relPath}: ${e && e.message ? e.message : e}`, 14, 70);
-        }
-
-        if (!thumbsBuilt) {
-            buildThumbs(thumbs, set, imgIndex, (n) => { lastActionWasTile = true; imgIndex = n; loadCurrent(); });
-            thumbsBuilt = true;
+        } else if (ext === 'jpg' || ext === 'jpeg' || ext === 'png') {
+            await renderImageToCanvas(relPath, canvas);
+            // tiffFitZoom, tiffZoom, panX, panY are set in renderImageToCanvas
         } else {
-            highlightThumbs(thumbs, imgIndex, lastActionWasTile);
-            lastActionWasTile = false;
+            throw new Error("Unsupported file type: " + ext);
         }
 
-        const url = new URL(window.location.href);
-        url.searchParams.set("img", String(imgIndex));
-        history.replaceState({}, "", url.toString());
-        document.title = `${set.title} – Image ${imgIndex}/${total}`;
+        channelEnabled = [true, true, true];
+        updateChannelButtons();
+
+        drawTIFFToCanvas(canvas, tiffZoom);
+        updateZoomLabel();
+    } catch (e) {
+        console.error("Render error:", e);
+        const ctx = canvas.getContext("2d");
+        canvas.width = 1200; canvas.height = 140;
+        ctx.fillStyle = "#111827"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#f9fafb"; ctx.font = "16px system-ui, sans-serif";
+        ctx.fillText(`Error rendering ${relPath}: ${e && e.message ? e.message : e}`, 14, 70);
     }
+
+    if (!thumbsBuilt) {
+        buildThumbs(thumbs, set, imgIndex, (n) => { lastActionWasTile = true; imgIndex = n; loadCurrent(); });
+        thumbsBuilt = true;
+    } else {
+        highlightThumbs(thumbs, imgIndex, lastActionWasTile);
+        lastActionWasTile = false;
+    }
+
+    const url = new URL(window.location.href);
+    url.searchParams.set("img", String(imgIndex));
+    history.replaceState({}, "", url.toString());
+    document.title = `${set.title} – Image ${imgIndex}/${total}`;
+}
 
     async function go(delta) {
         imgIndex += delta;
@@ -686,4 +689,32 @@ async function initGallery() {
     }
   }
 })();
+
+async function renderImageToCanvas(url, canvas) {
+    return new Promise((resolve, reject) => {
+        const img = new window.Image();
+        img.onload = function () {
+            tiffImageWidth = img.naturalWidth;
+            tiffImageHeight = img.naturalHeight;
+            tiffImageData = null; // Not used for JPEG/PNG
+            rasterImage = img;    // Store the loaded image
+
+            canvas.width = canvas.clientWidth;
+            canvas.height = canvas.clientHeight;
+
+            // Calculate fit zoom and center pan
+            tiffFitZoom = fitImageToCanvas(canvas, tiffImageWidth, tiffImageHeight);
+            tiffZoom = tiffFitZoom;
+            panX = tiffImageWidth / 2;
+            panY = tiffImageHeight / 2;
+
+            // Draw image
+            drawTIFFToCanvas(canvas, tiffZoom);
+
+            resolve();
+        };
+        img.onerror = reject;
+        img.src = url;
+    });
+}
 
