@@ -393,9 +393,11 @@ async function initGallery() {
     // --- Pinch to zoom (touch) ---
     let lastTouchDist = null;
     let lastTouchCenter = null;
+    let pinchActive = false; // Add this flag
 
     canvas.addEventListener('touchstart', function (e) {
         if (e.touches.length === 2) {
+            pinchActive = true;
             // Calculate initial distance and center
             const dx = e.touches[0].clientX - e.touches[1].clientX;
             const dy = e.touches[0].clientY - e.touches[1].clientY;
@@ -404,12 +406,18 @@ async function initGallery() {
                 x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
                 y: (e.touches[0].clientY + e.touches[1].clientY) / 2
             };
+        } else if (e.touches.length === 1) {
+            // Only start pan if not just finishing a pinch
+            if (!pinchActive) {
+                lastPanTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            }
         }
     }, { passive: false });
 
     canvas.addEventListener('touchmove', function (e) {
         if (e.touches.length === 2 && lastTouchDist !== null) {
             e.preventDefault();
+            pinchActive = true;
             // Calculate new distance and center
             const dx = e.touches[0].clientX - e.touches[1].clientX;
             const dy = e.touches[0].clientY - e.touches[1].clientY;
@@ -445,6 +453,15 @@ async function initGallery() {
             // Update for next move
             lastTouchDist = newDist;
             lastTouchCenter = newCenter;
+        } else if (e.touches.length === 1 && lastPanTouch && !pinchActive) {
+            e.preventDefault();
+            // Single-finger pan only if not just finishing a pinch
+            const dx = (e.touches[0].clientX - lastPanTouch.x) / tiffZoom;
+            const dy = (e.touches[0].clientY - lastPanTouch.y) / tiffZoom;
+            panX -= dx;
+            panY -= dy;
+            lastPanTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            drawTIFFToCanvas(canvas, tiffZoom);
         }
     }, { passive: false });
 
@@ -452,6 +469,10 @@ async function initGallery() {
         if (e.touches.length < 2) {
             lastTouchDist = null;
             lastTouchCenter = null;
+            pinchActive = false; // Reset pinch flag
+        }
+        if (e.touches.length === 0) {
+            lastPanTouch = null;
         }
     }, { passive: false });
 
