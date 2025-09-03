@@ -385,76 +385,102 @@ async function initGallery() {
         panY = ((canvas.height / 2 - mouseY) / newZoom) + imgY;
         tiffZoom = newZoom;
 
-
-        // --- Pinch to zoom (touch) ---
-        let lastTouchDist = null;
-        let lastTouchCenter = null;
-
-        canvas.addEventListener('touchstart', function (e) {
-            if (e.touches.length === 2) {
-                // Calculate initial distance and center
-                const dx = e.touches[0].clientX - e.touches[1].clientX;
-                const dy = e.touches[0].clientY - e.touches[1].clientY;
-                lastTouchDist = Math.hypot(dx, dy);
-                lastTouchCenter = {
-                    x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
-                    y: (e.touches[0].clientY + e.touches[1].clientY) / 2
-                };
-            }
-        }, { passive: false });
-
-        canvas.addEventListener('touchmove', function (e) {
-            if (e.touches.length === 2 && lastTouchDist !== null) {
-                e.preventDefault();
-                // Calculate new distance and center
-                const dx = e.touches[0].clientX - e.touches[1].clientX;
-                const dy = e.touches[0].clientY - e.touches[1].clientY;
-                const newDist = Math.hypot(dx, dy);
-                const newCenter = {
-                    x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
-                    y: (e.touches[0].clientY + e.touches[1].clientY) / 2
-                };
-
-                // Zoom factor
-                const zoomFactor = newDist / lastTouchDist;
-                let newZoom = tiffZoom * zoomFactor;
-                newZoom = Math.max(0.1, Math.min(8.0, newZoom));
-                if (newZoom === tiffZoom) return;
-
-                // Center of pinch in canvas coordinates
-                const rect = canvas.getBoundingClientRect();
-                const centerX = newCenter.x - rect.left;
-                const centerY = newCenter.y - rect.top;
-
-                // Image coordinates under pinch center before zoom
-                const imgX = (centerX - (canvas.width / 2 - panX * tiffZoom)) / tiffZoom;
-                const imgY = (centerY - (canvas.height / 2 - panY * tiffZoom)) / tiffZoom;
-
-                // After zoom, adjust pan so the same image point stays under the pinch center
-                panX = ((canvas.width / 2 - centerX) / newZoom) + imgX;
-                panY = ((canvas.height / 2 - centerY) / newZoom) + imgY;
-                tiffZoom = newZoom;
-
-                drawTIFFToCanvas(canvas, tiffZoom);
-                updateZoomLabel();
-
-                // Update for next move
-                lastTouchDist = newDist;
-                lastTouchCenter = newCenter;
-            }
-        }, { passive: false });
-
-        canvas.addEventListener('touchend', function (e) {
-            if (e.touches.length < 2) {
-                lastTouchDist = null;
-                lastTouchCenter = null;
-            }
-        }, { passive: false });
-
-
         drawTIFFToCanvas(canvas, tiffZoom);
         updateZoomLabel();
     }, { passive: false });
+
+
+    // --- Pinch to zoom (touch) ---
+    let lastTouchDist = null;
+    let lastTouchCenter = null;
+
+    canvas.addEventListener('touchstart', function (e) {
+        if (e.touches.length === 2) {
+            // Calculate initial distance and center
+            const dx = e.touches[0].clientX - e.touches[1].clientX;
+            const dy = e.touches[0].clientY - e.touches[1].clientY;
+            lastTouchDist = Math.hypot(dx, dy);
+            lastTouchCenter = {
+                x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+                y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+            };
+        }
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', function (e) {
+        if (e.touches.length === 2 && lastTouchDist !== null) {
+            e.preventDefault();
+            // Calculate new distance and center
+            const dx = e.touches[0].clientX - e.touches[1].clientX;
+            const dy = e.touches[0].clientY - e.touches[1].clientY;
+            const newDist = Math.hypot(dx, dy);
+            const newCenter = {
+                x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+                y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+            };
+
+            // Zoom factor
+            const zoomFactor = newDist / lastTouchDist;
+            let newZoom = tiffZoom * zoomFactor;
+            newZoom = Math.max(0.1, Math.min(8.0, newZoom));
+            if (newZoom === tiffZoom) return;
+
+            // Center of pinch in canvas coordinates
+            const rect = canvas.getBoundingClientRect();
+            const centerX = newCenter.x - rect.left;
+            const centerY = newCenter.y - rect.top;
+
+            // Image coordinates under pinch center before zoom
+            const imgX = (centerX - (canvas.width / 2 - panX * tiffZoom)) / tiffZoom;
+            const imgY = (centerY - (canvas.height / 2 - panY * tiffZoom)) / tiffZoom;
+
+            // After zoom, adjust pan so the same image point stays under the pinch center
+            panX = ((canvas.width / 2 - centerX) / newZoom) + imgX;
+            panY = ((canvas.height / 2 - centerY) / newZoom) + imgY;
+            tiffZoom = newZoom;
+
+            drawTIFFToCanvas(canvas, tiffZoom);
+            updateZoomLabel();
+
+            // Update for next move
+            lastTouchDist = newDist;
+            lastTouchCenter = newCenter;
+        }
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', function (e) {
+        if (e.touches.length < 2) {
+            lastTouchDist = null;
+            lastTouchCenter = null;
+        }
+    }, { passive: false });
+
+    // --- Single-finger pan (touch) ---
+    let lastPanTouch = null;
+    canvas.addEventListener('touchstart', function (e) {
+        if (e.touches.length === 1) {
+            lastPanTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', function (e) {
+        if (e.touches.length === 1 && lastPanTouch) {
+            e.preventDefault();
+            const dx = (e.touches[0].clientX - lastPanTouch.x) / tiffZoom;
+            const dy = (e.touches[0].clientY - lastPanTouch.y) / tiffZoom;
+            panX -= dx;
+            panY -= dy;
+            lastPanTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            drawTIFFToCanvas(canvas, tiffZoom);
+        }
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', function (e) {
+        if (e.touches.length === 0) {
+            lastPanTouch = null;
+        }
+    }, { passive: false });
+    //#############################################################
 
     // --- On zoom reset, also center pan ---
     if (zoomResetBtn) zoomResetBtn.addEventListener("click", () => {
