@@ -138,8 +138,8 @@ function clampPan(pan, imgSize, viewSize, zoom) {
     return Math.max(halfView, Math.min(imgSize - halfView, pan));
 }
 
-// --- Updated drawTIFFToCanvas with panning and clamping ---
-function drawTIFFToCanvas(canvas, zoom = 1.0) {
+// --- Updated drawImageToCanvas with panning and clamping ---
+function drawImageToCanvas(canvas, zoom = 1.0) {
     canvas.width = canvas.clientWidth;
     canvas.height = canvas.clientHeight;
 
@@ -265,7 +265,7 @@ async function renderTIFFToCanvas(url, canvas, zoom = 1.0) {
   tiffImageData = new ImageData(new Uint8ClampedArray(rgba), w, h);
 
   // Draw at current zoom
-  drawTIFFToCanvas(canvas, zoom);
+  drawImageToCanvas(canvas, zoom);
 }
 
 /* --------------- Gallery (thumbs + copy/download) ----------- */
@@ -380,7 +380,7 @@ async function initGallery() {
         tiffZoom = newZoom;
         panX = imgX;
         panY = imgY;
-        drawTIFFToCanvas(canvas, tiffZoom);
+        drawImageToCanvas(canvas, tiffZoom);
         updateZoomLabel();
     }
 
@@ -403,7 +403,7 @@ async function initGallery() {
         panY -= dy;
         lastMouseX = e.clientX;
         lastMouseY = e.clientY;
-        drawTIFFToCanvas(canvas, tiffZoom);
+        drawImageToCanvas(canvas, tiffZoom);
     });
     window.addEventListener('mouseup', () => {
         isPanning = false;
@@ -435,7 +435,7 @@ async function initGallery() {
         panY = ((canvas.height / 2 - mouseY) / newZoom) + imgY;
         tiffZoom = newZoom;
 
-        drawTIFFToCanvas(canvas, tiffZoom);
+        drawImageToCanvas(canvas, tiffZoom);
         updateZoomLabel();
     }, { passive: false });
 
@@ -497,7 +497,7 @@ async function initGallery() {
             panY = ((canvas.height / 2 - centerY) / newZoom) + imgY;
             tiffZoom = newZoom;
 
-            drawTIFFToCanvas(canvas, tiffZoom);
+            drawImageToCanvas(canvas, tiffZoom);
             updateZoomLabel();
 
             // Update for next move
@@ -511,7 +511,7 @@ async function initGallery() {
             panX -= dx;
             panY -= dy;
             lastPanTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-            drawTIFFToCanvas(canvas, tiffZoom);
+            drawImageToCanvas(canvas, tiffZoom);
         }
     }, { passive: false });
 
@@ -544,7 +544,7 @@ async function initGallery() {
             panX -= dx;
             panY -= dy;
             lastPanTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-            drawTIFFToCanvas(canvas, tiffZoom);
+            drawImageToCanvas(canvas, tiffZoom);
         }
     }, { passive: false });
 
@@ -560,7 +560,7 @@ async function initGallery() {
         tiffZoom = tiffFitZoom;
         panX = tiffImageWidth / 2;
         panY = tiffImageHeight / 2;
-        drawTIFFToCanvas(canvas, tiffZoom);
+        drawImageToCanvas(canvas, tiffZoom);
         updateZoomLabel();
     });
 
@@ -608,7 +608,7 @@ async function initGallery() {
         channelEnabled = [true, true, true];
         updateChannelButtons();
 
-        drawTIFFToCanvas(canvas, tiffZoom);
+        drawImageToCanvas(canvas, tiffZoom);
         updateZoomLabel();
     } catch (e) {
         console.error("Render error:", e);
@@ -689,17 +689,17 @@ async function initGallery() {
 
     if (redBtn) redBtn.addEventListener("click", () => {
         channelEnabled[0] = !channelEnabled[0];
-        drawTIFFToCanvas(canvas, tiffZoom);
+        drawImageToCanvas(canvas, tiffZoom);
         updateChannelButtons();
     });
     if (greenBtn) greenBtn.addEventListener("click", () => {
         channelEnabled[1] = !channelEnabled[1];
-        drawTIFFToCanvas(canvas, tiffZoom);
+        drawImageToCanvas(canvas, tiffZoom);
         updateChannelButtons();
     });
     if (blueBtn) blueBtn.addEventListener("click", () => {
         channelEnabled[2] = !channelEnabled[2];
-        drawTIFFToCanvas(canvas, tiffZoom);
+        drawImageToCanvas(canvas, tiffZoom);
         updateChannelButtons();
     });
 
@@ -754,7 +754,7 @@ async function renderImageToCanvas(url, canvas) {
             panY = tiffImageHeight / 2;
 
             // Draw image
-            drawTIFFToCanvas(canvas, tiffZoom);
+            drawImageToCanvas(canvas, tiffZoom);
 
             resolve();
         };
