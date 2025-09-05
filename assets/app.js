@@ -16,10 +16,47 @@ function getQueryParam(key) {
   return url.searchParams.get(key);
 }
 
+//function fitImageToCanvas(canvas, imgWidth, imgHeight) {
+//    const viewW = canvas.clientWidth;
+//    const viewH = canvas.clientHeight;
+//    console.info("viewW", viewW, "viewH", viewH, "imgWidth", imgWidth, "imgHeight", imgHeight, "res", Math.min(viewW / imgWidth, viewH / imgHeight, 1.0));
+//    return Math.min(viewW / imgWidth, viewH / imgHeight, 1.0);
+//}
+
 function fitImageToCanvas(canvas, imgWidth, imgHeight) {
     const viewW = canvas.clientWidth;
     const viewH = canvas.clientHeight;
-    return Math.min(viewW / imgWidth, viewH / imgHeight, 1.0);
+    // Remove the 1.0 cap so small images/videos are scaled up to fit
+    return Math.min(viewW / imgWidth, viewH / imgHeight);
+}
+
+function showRGBControls(show) {
+    const rgb = document.getElementById("rgb-controls");
+    if (rgb) rgb.style.display = show ? "" : "none";
+}
+function showVideoControls(show) {
+    const vid = document.getElementById("video-controls");
+    if (vid) vid.style.display = show ? "" : "none";
+}
+
+function showLoadingIndicator(show) {
+    const indicator = document.getElementById("loading-indicator");
+    if (indicator) indicator.style.display = show ? "" : "none";
+}
+
+function drawVideoFrame() {
+    if (!videoElement || videoElement.paused || videoElement.ended) return;
+    const canvas = document.getElementById("tiff-canvas");
+    if (!canvas) return;
+    drawImageToCanvas(canvas, tiffZoom, videoElement);
+    videoAnimationFrame = requestAnimationFrame(drawVideoFrame);
+}
+
+function redrawVideoIfPaused() {
+    if (videoElement && videoElement.paused) {
+        const canvas = document.getElementById("tiff-canvas");
+        if (canvas) drawImageToCanvas(canvas, tiffZoom, videoElement);
+    }
 }
 
 /* ------------ Manifest loader (per-set only) ------------
@@ -118,6 +155,10 @@ let lastRasterChannels = [true, true, true];
 
 let maskedTiffCanvas = null;
 let lastTiffChannels = [true, true, true];
+
+let videoElement = null;
+let videoAnimationFrame = null;
+
 //#############################################################
 function updateChannelButtons() {
     const redBtn = document.getElementById("toggle-red");
@@ -139,7 +180,7 @@ function clampPan(pan, imgSize, viewSize, zoom) {
 }
 
 // --- Updated drawImageToCanvas with panning and clamping ---
-function drawImageToCanvas(canvas, zoom = 1.0) {
+function drawImageToCanvas(canvas, zoom = 1.0, source = null) {
     canvas.width = canvas.clientWidth;
     canvas.height = canvas.clientHeight;
 
@@ -156,7 +197,13 @@ function drawImageToCanvas(canvas, zoom = 1.0) {
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    if (tiffImageData) {
+    if (source && (source instanceof HTMLVideoElement || source instanceof HTMLImageElement)) {
+        ctx.drawImage(
+            source,
+            0, 0, tiffImageWidth, tiffImageHeight,
+            offsetX, offsetY, imgW, imgH
+        );
+    } else if (tiffImageData) {
         // Only re-generate masked canvas if channels or image changed
         if (
             !maskedTiffCanvas ||
@@ -268,6 +315,64 @@ async function renderTIFFToCanvas(url, canvas, zoom = 1.0) {
   drawImageToCanvas(canvas, zoom);
 }
 
+async function renderVideoToCanvas(url, canvas) {
+    // Clean up any previous video
+    if (videoElement) {
+        videoElement.pause();
+        videoElement.src = "";
+        videoElement = null;
+        if (videoAnimationFrame) {
+            cancelAnimationFrame(videoAnimationFrame);
+            videoAnimationFrame = null;
+        }
+    }
+
+    showLoadingIndicator(true);
+
+    return new Promise((resolve, reject) => {
+        videoElement = document.createElement('video');
+        videoElement.src = url;
+        videoElement.crossOrigin = "anonymous";
+        videoElement.muted = true;
+        videoElement.playsInline = true;
+        videoElement.preload = "auto";
+        videoElement.addEventListener('loadedmetadata', () => {
+    // Ensure canvas size is up-to-date
+    canvas.width = canvas.clientWidth;
+    canvas.height = canvas.clientHeight;
+
+    tiffImageWidth = videoElement.videoWidth;
+    tiffImageHeight = videoElement.videoHeight;
+    tiffFitZoom = fitImageToCanvas(canvas, tiffImageWidth, tiffImageHeight);
+    tiffZoom = tiffFitZoom;
+    panX = tiffImageWidth / 2;
+    panY = tiffImageHeight / 2;
+    videoElement.currentTime = 0;
+
+    // Wait for enough buffer before playing
+    const minBufferSeconds = 5;
+    function checkBuffer() {
+        if (videoElement.buffered.length > 0) {
+            const bufferedEnd = videoElement.buffered.end(0);
+            if (bufferedEnd >= minBufferSeconds || bufferedEnd >= videoElement.duration) {
+                showLoadingIndicator(false);
+                videoElement.play();
+                drawVideoFrame();
+                resolve();
+                return;
+            }
+        }
+        setTimeout(checkBuffer, 100);
+    }
+    checkBuffer();
+});
+        videoElement.addEventListener('error', (e) => {
+            showLoadingIndicator(false);
+            reject(new Error("Failed to load video"));
+        });
+    });
+}
+
 /* --------------- Gallery (thumbs + copy/download) ----------- */
 function buildThumbs(container, set, activeIndex, onSelect) {
     container.innerHTML = "";
@@ -365,6 +470,10 @@ async function initGallery() {
     const zoomLabel = document.getElementById("zoom-label");
     const zoomResetBtn = document.getElementById("zoom-reset");
 
+    const videoReverseBtn = document.getElementById("video-reverse");
+    const videoPauseBtn = document.getElementById("video-pause");
+    const videoForwardBtn = document.getElementById("video-forward");
+
     function updateZoomLabel() {
         if (zoomLabel) zoomLabel.textContent = `${Math.round(tiffZoom * 100)}%`;
     }
@@ -404,6 +513,7 @@ async function initGallery() {
         lastMouseX = e.clientX;
         lastMouseY = e.clientY;
         drawImageToCanvas(canvas, tiffZoom);
+        redrawVideoIfPaused();
     });
     window.addEventListener('mouseup', () => {
         isPanning = false;
@@ -436,6 +546,7 @@ async function initGallery() {
         tiffZoom = newZoom;
 
         drawImageToCanvas(canvas, tiffZoom);
+        redrawVideoIfPaused();
         updateZoomLabel();
     }, { passive: false });
 
@@ -498,6 +609,7 @@ async function initGallery() {
             tiffZoom = newZoom;
 
             drawImageToCanvas(canvas, tiffZoom);
+            redrawVideoIfPaused();
             updateZoomLabel();
 
             // Update for next move
@@ -512,6 +624,7 @@ async function initGallery() {
             panY -= dy;
             lastPanTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
             drawImageToCanvas(canvas, tiffZoom);
+            redrawVideoIfPaused();
         }
     }, { passive: false });
 
@@ -545,6 +658,7 @@ async function initGallery() {
             panY -= dy;
             lastPanTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
             drawImageToCanvas(canvas, tiffZoom);
+            redrawVideoIfPaused();
         }
     }, { passive: false });
 
@@ -561,6 +675,7 @@ async function initGallery() {
         panX = tiffImageWidth / 2;
         panY = tiffImageHeight / 2;
         drawImageToCanvas(canvas, tiffZoom);
+        redrawVideoIfPaused();
         updateZoomLabel();
     });
 
@@ -571,6 +686,26 @@ async function initGallery() {
     if (zoomOutBtn) zoomOutBtn.addEventListener("click", () => {
         const newZoom = Math.max(tiffZoom / 1.25, 0.1);
         zoomAtCanvasCenter(newZoom);
+    });
+
+    if (videoReverseBtn) videoReverseBtn.addEventListener("click", () => {
+        if (videoElement) videoElement.currentTime = Math.max(0, videoElement.currentTime - 1);
+    });
+    if (videoPauseBtn) videoPauseBtn.addEventListener("click", () => {
+        if (videoElement) {
+            //console.log("Pause/Play clicked. Current paused state:", videoElement.paused);
+            if (videoElement.paused) {
+                videoElement.play();
+                drawVideoFrame(); // <-- Ensure animation resumes!
+            } else {
+                videoElement.pause();
+            }
+        } else {
+            console.log("No videoElement available.");
+        }
+    });
+    if (videoForwardBtn) videoForwardBtn.addEventListener("click", () => {
+        if (videoElement) videoElement.currentTime = Math.min(videoElement.duration, videoElement.currentTime + 1);
     });
 
     if (setTitle) setTitle.textContent = set.title;
@@ -591,16 +726,37 @@ async function initGallery() {
 
     const ext = relPath.split('.').pop().toLowerCase();
 
-    try {
+        try {
+            // --- Reset video state if switching to non-video ---
+            if (ext === 'tif' || ext === 'tiff' || ext === 'jpg' || ext === 'jpeg' || ext === 'png') {
+                if (videoElement) {
+                    videoElement.pause();
+                    videoElement.src = "";
+                    videoElement = null;
+                }
+                if (videoAnimationFrame) {
+                    cancelAnimationFrame(videoAnimationFrame);
+                    videoAnimationFrame = null;
+                }
+            }
+
         if (ext === 'tif' || ext === 'tiff') {
             await renderTIFFToCanvas(relPath, canvas, 1.0);
             tiffFitZoom = fitImageToCanvas(canvas, tiffImageWidth, tiffImageHeight);
             tiffZoom = tiffFitZoom;
             panX = tiffImageWidth / 2;
             panY = tiffImageHeight / 2;
+            showRGBControls(true);
+            showVideoControls(false);
         } else if (ext === 'jpg' || ext === 'jpeg' || ext === 'png') {
             await renderImageToCanvas(relPath, canvas);
+            showRGBControls(true);
+            showVideoControls(false);
             // tiffFitZoom, tiffZoom, panX, panY are set in renderImageToCanvas
+        } else if (ext === 'mp4') {
+            await renderVideoToCanvas(relPath, canvas);
+            showRGBControls(false);
+            showVideoControls(true);
         } else {
             throw new Error("Unsupported file type: " + ext);
         }

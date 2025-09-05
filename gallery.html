@@ -18,6 +18,9 @@
       <div class="canvas-wrap">
           <canvas id="tiff-canvas" aria-label="TIFF image viewer"></canvas>
           <div class="filename" id="filename"></div>
+          <div id="loading-indicator" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;background:rgba(0,0,0,0.7);padding:0.5em 1em;border-radius:6px;z-index:10;">
+              Loading video...
+          </div>
       </div>
       <button id="next-btn" class="nav-btn" aria-label="Next image">&#10095;</button>
   </main>
@@ -31,9 +34,16 @@
           <button id="copy-link">Copy link to this image</button>
           <button id="download-source">Download source image</button>
           <span id="copied" class="copy-status" aria-live="polite"></span>
-          <button id="toggle-red" class="channel-btn" title="Toggle Red"></button>
-          <button id="toggle-green" class="channel-btn" title="Toggle Green"></button>
-          <button id="toggle-blue" class="channel-btn" title="Toggle Blue"></button>
+          <span id="rgb-controls">
+              <button id="toggle-red" class="channel-btn" title="Toggle Red"></button>
+              <button id="toggle-green" class="channel-btn" title="Toggle Green"></button>
+              <button id="toggle-blue" class="channel-btn" title="Toggle Blue"></button>
+          </span>
+          <span id="video-controls" style="display:none;">
+              <button id="video-reverse" title="Back 1s">&#9194;</button>
+              <button id="video-pause" title="Pause/Play">&#10074;&#10074;/&#9654;</button>
+              <button id="video-forward" title="Forward 1s">&#9193;</button>
+          </span>
       </div>
   </footer>
 
