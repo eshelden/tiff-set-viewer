@@ -16,13 +16,6 @@ function getQueryParam(key) {
   return url.searchParams.get(key);
 }
 
-//function fitImageToCanvas(canvas, imgWidth, imgHeight) {
-//    const viewW = canvas.clientWidth;
-//    const viewH = canvas.clientHeight;
-//    console.info("viewW", viewW, "viewH", viewH, "imgWidth", imgWidth, "imgHeight", imgHeight, "res", Math.min(viewW / imgWidth, viewH / imgHeight, 1.0));
-//    return Math.min(viewW / imgWidth, viewH / imgHeight, 1.0);
-//}
-
 function fitImageToCanvas(canvas, imgWidth, imgHeight) {
     const viewW = canvas.clientWidth;
     const viewH = canvas.clientHeight;
@@ -58,6 +51,62 @@ function redrawVideoIfPaused() {
         if (canvas) drawImageToCanvas(canvas, tiffZoom, videoElement);
     }
 }
+
+function saveImageViewState(setId, imgIndex) {
+    const key = `viewState:${setId}:${imgIndex}`;
+    const state = {
+        zoom: tiffZoom,
+        panX: panX,
+        panY: panY,
+        channels: [...channelEnabled]
+    };
+    localStorage.setItem(key, JSON.stringify(state));
+}
+
+function loadImageViewState(setId, imgIndex) {
+    const key = `viewState:${setId}:${imgIndex}`;
+    const state = localStorage.getItem(key);
+    if (state) {
+        try {
+            const obj = JSON.parse(state);
+            tiffZoom = obj.zoom ?? tiffZoom;
+            panX = obj.panX ?? panX;
+            panY = obj.panY ?? panY;
+            if (Array.isArray(obj.channels)) {
+                channelEnabled = obj.channels;
+            }
+        } catch (e) {
+            // Ignore parse errors
+        }
+    }
+}
+
+function clearImageViewState(setId, imgIndex) {
+    const key = `viewState:${setId}:${imgIndex}`;
+    localStorage.removeItem(key);
+}
+//function updateViewerURL(imgIndex) {
+//    const url = new URL(window.location.href);
+//    // Parse current state param
+//    const stateMap = parseStateParam(url.searchParams.get("state"));
+//    // Update state for current image
+//    stateMap[imgIndex] = {
+//        zoom: tiffZoom,
+//        panx: Math.round(panX),
+//        pany: Math.round(panY),
+//        rgb: channelEnabled.map(v => v ? "1" : "0").join("")
+//    };
+//    url.searchParams.set("img", String(imgIndex));
+//    url.searchParams.set("state", serializeStateParam(stateMap));
+//    history.replaceState({}, "", url.toString());
+//}
+
+//function updateViewerURL(imgIndex) {
+//    console.log("tiffZoom", tiffZoom.toFixed(3),
+//        "panX", Math.round(panX),
+//        "panY", Math.round(panY),
+//        "Channels", channelEnabled.map(v => v ? "1" : "0").join(""));
+//}
 
 /* ------------ Manifest loader (per-set only) ------------
    Supports any of:
@@ -264,13 +313,14 @@ function drawImageToCanvas(canvas, zoom = 1.0, source = null) {
             0, 0, tiffImageWidth, tiffImageHeight,
             offsetX, offsetY, imgW, imgH
         );
-    }
-}
+    } // end of if raster image
+} // end of function
 
 async function renderTIFFToCanvas(url, canvas, zoom = 1.0) {
     rasterImage = null; // Clear any previous JPEG/PNG image
     maskedTiffCanvas = null;
     lastTiffChannels = [true, true, true];
+
   // 1. Fetch the TIFF file as an ArrayBuffer
   const resp = await fetch(url, { cache: "no-store" });
   if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${url}`);
@@ -491,6 +541,7 @@ async function initGallery() {
         panY = imgY;
         drawImageToCanvas(canvas, tiffZoom);
         updateZoomLabel();
+        //updateViewerURL(imgIndex);
     }
 
     // --- Panning state ---
@@ -504,6 +555,7 @@ async function initGallery() {
         lastMouseY = e.clientY;
         canvas.style.cursor = 'grabbing';
     });
+
     window.addEventListener('mousemove', (e) => {
         if (!isPanning) return;
         const dx = (e.clientX - lastMouseX) / tiffZoom;
@@ -514,6 +566,7 @@ async function initGallery() {
         lastMouseY = e.clientY;
         drawImageToCanvas(canvas, tiffZoom);
         redrawVideoIfPaused();
+        saveImageViewState(setId, imgIndex);
     });
     window.addEventListener('mouseup', () => {
         isPanning = false;
@@ -547,6 +600,7 @@ async function initGallery() {
 
         drawImageToCanvas(canvas, tiffZoom);
         redrawVideoIfPaused();
+        saveImageViewState(setId, imgIndex);
         updateZoomLabel();
     }, { passive: false });
 
@@ -610,6 +664,7 @@ async function initGallery() {
 
             drawImageToCanvas(canvas, tiffZoom);
             redrawVideoIfPaused();
+            saveImageViewState(setId, imgIndex);
             updateZoomLabel();
 
             // Update for next move
@@ -677,15 +732,18 @@ async function initGallery() {
         drawImageToCanvas(canvas, tiffZoom);
         redrawVideoIfPaused();
         updateZoomLabel();
+        saveImageViewState(set.id, imgIndex);
     });
 
     if (zoomInBtn) zoomInBtn.addEventListener("click", () => {
         const newZoom = Math.min(tiffZoom * 1.25, 8.0);
         zoomAtCanvasCenter(newZoom);
+        saveImageViewState(set.id, imgIndex);
     });
     if (zoomOutBtn) zoomOutBtn.addEventListener("click", () => {
         const newZoom = Math.max(tiffZoom / 1.25, 0.1);
         zoomAtCanvasCenter(newZoom);
+        saveImageViewState(set.id, imgIndex);
     });
 
     if (videoReverseBtn) videoReverseBtn.addEventListener("click", () => {
@@ -719,6 +777,7 @@ async function initGallery() {
     let thumbsBuilt = false;
     let lastActionWasTile = false;
 
+    /////////////////// function load current image //////////////////
     // --- On image load or reset, center the image ---
     async function loadCurrent() {
     const relPath = set.basePath.replace(/\/+$/, '') + '/' + set.images[imgIndex - 1];
@@ -726,19 +785,19 @@ async function initGallery() {
 
     const ext = relPath.split('.').pop().toLowerCase();
 
-        try {
-            // --- Reset video state if switching to non-video ---
-            if (ext === 'tif' || ext === 'tiff' || ext === 'jpg' || ext === 'jpeg' || ext === 'png') {
-                if (videoElement) {
-                    videoElement.pause();
-                    videoElement.src = "";
-                    videoElement = null;
-                }
-                if (videoAnimationFrame) {
-                    cancelAnimationFrame(videoAnimationFrame);
-                    videoAnimationFrame = null;
-                }
+    try {
+        // --- Reset video state if switching to non-video ---
+        if (ext === 'tif' || ext === 'tiff' || ext === 'jpg' || ext === 'jpeg' || ext === 'png') {
+            if (videoElement) {
+                videoElement.pause();
+                videoElement.src = "";
+                videoElement = null;
             }
+            if (videoAnimationFrame) {
+                cancelAnimationFrame(videoAnimationFrame);
+                videoAnimationFrame = null;
+            }
+        }
 
         if (ext === 'tif' || ext === 'tiff') {
             await renderTIFFToCanvas(relPath, canvas, 1.0);
@@ -757,13 +816,18 @@ async function initGallery() {
             await renderVideoToCanvas(relPath, canvas);
             showRGBControls(false);
             showVideoControls(true);
+            // tiffFitZoom, tiffZoom, panX, panY are set in renderVideoToCanvas
         } else {
             throw new Error("Unsupported file type: " + ext);
         }
 
+        // Set defaults
         channelEnabled = [true, true, true];
-        updateChannelButtons();
 
+        // Load saved state if it exists (will override defaults if present)
+        loadImageViewState(set.id, imgIndex);
+
+        updateChannelButtons();
         drawImageToCanvas(canvas, tiffZoom);
         updateZoomLabel();
     } catch (e) {
@@ -846,16 +910,19 @@ async function initGallery() {
     if (redBtn) redBtn.addEventListener("click", () => {
         channelEnabled[0] = !channelEnabled[0];
         drawImageToCanvas(canvas, tiffZoom);
+        saveImageViewState(setId, imgIndex);
         updateChannelButtons();
     });
     if (greenBtn) greenBtn.addEventListener("click", () => {
         channelEnabled[1] = !channelEnabled[1];
         drawImageToCanvas(canvas, tiffZoom);
+        saveImageViewState(setId, imgIndex);
         updateChannelButtons();
     });
     if (blueBtn) blueBtn.addEventListener("click", () => {
         channelEnabled[2] = !channelEnabled[2];
         drawImageToCanvas(canvas, tiffZoom);
+        saveImageViewState(setId, imgIndex);
         updateChannelButtons();
     });
 
