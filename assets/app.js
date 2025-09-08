@@ -895,7 +895,7 @@ async function initGallery() {
             document.body.appendChild(a);
             a.click();
             a.remove();
-            flash("Downloading source TIFF...");
+            flash("Downloading source image...");
         });
     }
 
