@@ -86,6 +86,16 @@ function clearImageViewState(setId, imgIndex) {
     localStorage.removeItem(key);
 }
 
+function saveLastViewedImageIndex(setId, imgIndex) {
+    localStorage.setItem(`lastViewed:${setId}`, String(imgIndex));
+}
+
+function loadLastViewedImageIndex(setId) {
+    const val = localStorage.getItem(`lastViewed:${setId}`);
+    const idx = parseInt(val, 10);
+    return Number.isFinite(idx) && idx > 0 ? idx : 1;
+}
+
 /* ------------ Manifest loader (per-set only) ------------
    Supports any of:
    1) ["Cnt-0001","Cnt-0002"]
@@ -149,7 +159,9 @@ async function initIndex() {
     sets.forEach(set => {
       const card = document.createElement("div"); card.className = "card";
       const a = document.createElement("a");
-      a.href = `gallery.html?set=${encodeURIComponent(set.id)}&img=1`;
+      // a.href = `gallery.html?set=${encodeURIComponent(set.id)}&img=1`;
+      const lastViewed = loadLastViewedImageIndex(set.id);
+      a.href = `gallery.html?set=${encodeURIComponent(set.id)}&img=${lastViewed}`;
       a.setAttribute("aria-label", `Open ${set.title}`);
 
       const img = document.createElement("img");
@@ -459,8 +471,10 @@ function highlightThumbs(container, activeIndex, shouldScroll = false) {
 
 async function initGallery() {
     const setId = getQueryParam("set");
-    let imgIndex = parseInt(getQueryParam("img") || "1", 10);
-    if (!Number.isFinite(imgIndex) || imgIndex < 1) imgIndex = 1;
+    let imgIndex = parseInt(getQueryParam("img"), 10);
+    if (!Number.isFinite(imgIndex) || imgIndex < 1) {
+        imgIndex = loadLastViewedImageIndex(setId);
+    }
 
     let sets;
     try {
@@ -832,6 +846,8 @@ async function initGallery() {
         }
         descEl.textContent = imgObj.description || "";
         descEl.style.display = imgObj.description ? "" : "none";
+
+        saveLastViewedImageIndex(set.id, imgIndex); //save the identity of this image as last viewed.
 
     } catch (e) {
         console.error("Render error:", e);
