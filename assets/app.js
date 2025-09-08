@@ -61,6 +61,7 @@ function saveImageViewState(setId, imgIndex) {
         channels: [...channelEnabled]
     };
     localStorage.setItem(key, JSON.stringify(state));
+    updateViewerURL(setId, imgIndex);
 }
 
 function loadImageViewState(setId, imgIndex) {
@@ -94,6 +95,47 @@ function loadLastViewedImageIndex(setId) {
     const val = localStorage.getItem(`lastViewed:${setId}`);
     const idx = parseInt(val, 10);
     return Number.isFinite(idx) && idx > 0 ? idx : 1;
+}
+
+function updateViewerURL(setId, imgIndex) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("set", setId);
+    url.searchParams.set("img", String(imgIndex));
+    url.searchParams.set("panX", Math.round(panX));
+    url.searchParams.set("panY", Math.round(panY));
+    url.searchParams.set("zoom", Number(tiffZoom.toFixed(4)));
+    if (!videoElement) {
+        url.searchParams.set("r", channelEnabled[0] ? "1" : "0");
+        url.searchParams.set("g", channelEnabled[1] ? "1" : "0");
+        url.searchParams.set("b", channelEnabled[2] ? "1" : "0");
+    } else {
+        url.searchParams.delete("r");
+        url.searchParams.delete("g");
+        url.searchParams.delete("b");
+    }
+    history.replaceState({}, "", url.toString());
+}
+
+function restoreViewerStateFromURL() {
+    const panXParam = parseFloat(getQueryParam("panX"));
+    const panYParam = parseFloat(getQueryParam("panY"));
+    const zoomParam = parseFloat(getQueryParam("zoom"));
+    const rParam = getQueryParam("r");
+    const gParam = getQueryParam("g");
+    const bParam = getQueryParam("b");
+
+    if (Number.isFinite(panXParam)) panX = panXParam;
+    if (Number.isFinite(panYParam)) panY = panYParam;
+    if (Number.isFinite(zoomParam) && zoomParam > 0) tiffZoom = zoomParam;
+
+    // Only set RGB if present in URL (for images)
+    if (rParam !== null && gParam !== null && bParam !== null) {
+        channelEnabled = [
+            rParam === "1",
+            gParam === "1",
+            bParam === "1"
+        ];
+    }
 }
 
 /* ------------ Manifest loader (per-set only) ------------
@@ -475,6 +517,8 @@ async function initGallery() {
     if (!Number.isFinite(imgIndex) || imgIndex < 1) {
         imgIndex = loadLastViewedImageIndex(setId);
     }
+
+    restoreViewerStateFromURL();
 
     let sets;
     try {
@@ -866,9 +910,10 @@ async function initGallery() {
         lastActionWasTile = false;
     }
 
-    const url = new URL(window.location.href);
-    url.searchParams.set("img", String(imgIndex));
-    history.replaceState({}, "", url.toString());
+    //const url = new URL(window.location.href);
+    //url.searchParams.set("img", String(imgIndex));
+    //history.replaceState({}, "", url.toString());
+    updateViewerURL(set.id, imgIndex);
     document.title = `${set.title} – Image ${imgIndex}/${total}`;
 }
 
@@ -892,7 +937,27 @@ async function initGallery() {
     if (copyBtn) {
         copyBtn.addEventListener("click", async () => {
             try {
-                await navigator.clipboard.writeText(window.location.href);
+                // Get current URL
+                const url = new URL(window.location.href);
+
+                // Add pan and zoom
+                url.searchParams.set("panX", Math.round(panX));
+                url.searchParams.set("panY", Math.round(panY));
+                url.searchParams.set("zoom", Number(tiffZoom.toFixed(4)));
+
+                // If viewing an image, add RGB channel states
+                if (!videoElement) {
+                    url.searchParams.set("r", channelEnabled[0] ? "1" : "0");
+                    url.searchParams.set("g", channelEnabled[1] ? "1" : "0");
+                    url.searchParams.set("b", channelEnabled[2] ? "1" : "0");
+                } else {
+                    // Remove RGB params if present
+                    url.searchParams.delete("r");
+                    url.searchParams.delete("g");
+                    url.searchParams.delete("b");
+                }
+
+                await navigator.clipboard.writeText(url.toString());
                 flash("Link copied!");
             } catch (e) {
                 console.error("Copy link failed:", e);
