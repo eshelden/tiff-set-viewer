@@ -1,0 +1,7 @@
+Add function so that the last image you looked at is loaded when you go back to a set.
+Add ability to read image params from URL if present so users can send the view to others
+Add update to tiles so that they look like the views
+Update copy url function so it includes image parameter data
+Change names from TIFF to something else, unless it's really a TIFF
+Make video buttons more useful.
+Other LUTs?

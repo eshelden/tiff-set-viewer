@@ -85,28 +85,6 @@ function clearImageViewState(setId, imgIndex) {
     const key = `viewState:${setId}:${imgIndex}`;
     localStorage.removeItem(key);
 }
-//function updateViewerURL(imgIndex) {
-//    const url = new URL(window.location.href);
-//    // Parse current state param
-//    const stateMap = parseStateParam(url.searchParams.get("state"));
-//    // Update state for current image
-//    stateMap[imgIndex] = {
-//        zoom: tiffZoom,
-//        panx: Math.round(panX),
-//        pany: Math.round(panY),
-//        rgb: channelEnabled.map(v => v ? "1" : "0").join("")
-//    };
-//    url.searchParams.set("img", String(imgIndex));
-//    url.searchParams.set("state", serializeStateParam(stateMap));
-//    history.replaceState({}, "", url.toString());
-//}
-
-//function updateViewerURL(imgIndex) {
-//    console.log("tiffZoom", tiffZoom.toFixed(3),
-//        "panX", Math.round(panX),
-//        "panY", Math.round(panY),
-//        "Channels", channelEnabled.map(v => v ? "1" : "0").join(""));
-//}
 
 /* ------------ Manifest loader (per-set only) ------------
    Supports any of:
@@ -122,8 +100,14 @@ async function loadManifestList(basePath) {
         const data = await res.json();
 
         if (Array.isArray(data)) {
-            // Use entries as-is (they must include extension)
-            return data;
+            // Parse entries for name and optional description
+            return data.map(entry => {
+                const [name, ...descParts] = entry.split(':');
+                return {
+                    name: name.trim(),
+                    description: descParts.length ? descParts.join(':').trim() : ""
+                };
+            });
         }
         if (data && Array.isArray(data.basenames)) {
             // If you still support basenames, add a warning or error
@@ -131,8 +115,13 @@ async function loadManifestList(basePath) {
             return data.basenames; // Or throw an error if you want to enforce extensions
         }
         if (data && Array.isArray(data.images)) {
-            // Use entries as-is (they must include extension)
-            return data.images;
+            return data.images.map(entry => {
+                const [name, ...descParts] = entry.split(':');
+                return {
+                    name: name.trim(),
+                    description: descParts.length ? descParts.join(':').trim() : ""
+                };
+            });
         }
     } catch (e) {
         console.warn('Manifest load failed:', e);
@@ -426,20 +415,15 @@ async function renderVideoToCanvas(url, canvas) {
 /* --------------- Gallery (thumbs + copy/download) ----------- */
 function buildThumbs(container, set, activeIndex, onSelect) {
     container.innerHTML = "";
-    // Always strip extension and add .jpg for thumbs
     const toJpg = (name) => name.replace(/\.[^.]+$/, ".jpg");
-    set.images.forEach((imgName, idx) => {
-        // Log before and after conversion for debugging
-        //console.log("Thumb original:", imgName);
-        const thumbFile = toJpg(imgName);
-        //console.log("Thumb for thumbnail:", thumbFile);
-
+    set.images.forEach((imgObj, idx) => {
+        const thumbFile = toJpg(imgObj.name);
         const el = document.createElement("button");
         el.className = "thumb" + (idx + 1 === activeIndex ? " active" : "");
-        el.title = imgName;
+        el.title = imgObj.name;
 
         const thumb = document.createElement("img");
-        thumb.alt = imgName;
+        thumb.alt = imgObj.name;
         thumb.loading = (idx < 24) ? "eager" : "lazy";
         thumb.decoding = "async";
         thumb.style.visibility = "hidden";
@@ -450,7 +434,7 @@ function buildThumbs(container, set, activeIndex, onSelect) {
 
         thumb.addEventListener("load", () => { thumb.style.visibility = "visible"; }, { once: true });
         thumb.onerror = () => {
-            const fallback = set.thumbnail || svgFallbackCard(imgName);
+            const fallback = set.thumbnail || svgFallbackCard(imgObj.name);
             thumb.src = fallback;
             thumb.style.visibility = "visible";
         };
@@ -714,6 +698,7 @@ async function initGallery() {
             lastPanTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
             drawImageToCanvas(canvas, tiffZoom);
             redrawVideoIfPaused();
+            saveImageViewState(set.id, imgIndex);
         }
     }, { passive: false });
 
@@ -780,7 +765,8 @@ async function initGallery() {
     /////////////////// function load current image //////////////////
     // --- On image load or reset, center the image ---
     async function loadCurrent() {
-    const relPath = set.basePath.replace(/\/+$/, '') + '/' + set.images[imgIndex - 1];
+    const imgObj = set.images[imgIndex - 1];
+    const relPath = set.basePath.replace(/\/+$/, '') + '/' + imgObj.name;
     if (filenameLabel) filenameLabel.textContent = relPath;
 
     const ext = relPath.split('.').pop().toLowerCase();
@@ -830,6 +816,23 @@ async function initGallery() {
         updateChannelButtons();
         drawImageToCanvas(canvas, tiffZoom);
         updateZoomLabel();
+
+        // Show description under viewer
+        let descEl = document.getElementById("image-description");
+        if (!descEl) {
+            descEl = document.createElement("div");
+            descEl.id = "image-description";
+            descEl.style.width = "100%";
+            descEl.style.maxWidth = canvas.clientWidth + "px";
+            descEl.style.margin = "1em auto";
+            descEl.style.wordBreak = "break-word";
+            descEl.style.whiteSpace = "pre-wrap";
+            // Insert just after canvas, before footer/buttons
+            canvas.parentNode.insertBefore(descEl, canvas.nextSibling);
+        }
+        descEl.textContent = imgObj.description || "";
+        descEl.style.display = imgObj.description ? "" : "none";
+
     } catch (e) {
         console.error("Render error:", e);
         const ctx = canvas.getContext("2d");
@@ -884,7 +887,8 @@ async function initGallery() {
 
     if (srcBtn) {
         srcBtn.addEventListener("click", () => {
-            const relPath = set.basePath.replace(/\/+$/, '') + '/' + set.images[imgIndex - 1];
+            const imgObj = set.images[imgIndex - 1];
+            const relPath = set.basePath.replace(/\/+$/, '') + '/' + imgObj.name;
             const a = document.createElement('a');
             a.href = relPath;
             a.download = relPath.split('/').pop();
