@@ -1,8 +1,12 @@
-Add function so that the last image you looked at is loaded when you go back to a set.
-Add ability to read image params from URL if present so users can send the view to others
+(Done) Add function so that the last image you looked at is loaded when you go back to a set.
+(Done) Add ability to read image params from URL if present so users can send the view to others
 Add update to tiles so that they look like the views (?)
-Update copy url function so it includes image parameter data
+(Done) Update copy url function so it includes image parameter data
 Change function names from TIFF to something else, unless it's really a TIFF
 Make video buttons more useful.
 Other LUTs?
-(DONE) Add handling of optional image descriptions.
+(Done) Add handling of optional image descriptions.
+Add information in manifests for different handling of images. So, maybe a quiz, versus a feature counter, vs something else?
+Button to loop videos.
+dim or remove last and next buttons when showing the first and last images.
+Fix the image size bug.

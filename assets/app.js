@@ -449,14 +449,24 @@ async function renderVideoToCanvas(url, canvas) {
             const bufferedEnd = videoElement.buffered.end(0);
             if (bufferedEnd >= minBufferSeconds || bufferedEnd >= videoElement.duration) {
                 showLoadingIndicator(false);
-                videoElement.play();
-                drawVideoFrame();
-                resolve();
+                videoElement.pause(); // Ensure paused
+                videoElement.currentTime = 0; // Seek to first frame
+                videoElement.addEventListener('seeked', function onSeeked() {
+                    drawImageToCanvas(canvas, tiffZoom, videoElement);
+                    videoElement.removeEventListener('seeked', onSeeked);
+                    resolve();
+                });
+                // If already at time 0, trigger draw immediately
+                if (videoElement.currentTime === 0) {
+                    drawImageToCanvas(canvas, tiffZoom, videoElement);
+                    resolve();
+                }
                 return;
             }
         }
         setTimeout(checkBuffer, 100);
-    }
+            }
+
     checkBuffer();
 });
         videoElement.addEventListener('error', (e) => {
@@ -563,6 +573,7 @@ async function initGallery() {
     const zoomResetBtn = document.getElementById("zoom-reset");
 
     const videoReverseBtn = document.getElementById("video-reverse");
+    const videoLoopBtn = document.getElementById("video-loop");
     const videoPauseBtn = document.getElementById("video-pause");
     const videoForwardBtn = document.getElementById("video-forward");
 
@@ -790,7 +801,13 @@ async function initGallery() {
     });
 
     if (videoReverseBtn) videoReverseBtn.addEventListener("click", () => {
-        if (videoElement) videoElement.currentTime = Math.max(0, videoElement.currentTime - 1);
+        if (videoElement) {
+            if (!videoElement.paused) videoElement.pause();
+            // Move one frame backward
+            const frameDuration = 1 / (videoElement.frameRate || 25); // fallback to 25fps
+            videoElement.currentTime = Math.max(0, videoElement.currentTime - frameDuration);
+            redrawVideoIfPaused();
+        }
     });
     if (videoPauseBtn) videoPauseBtn.addEventListener("click", () => {
         if (videoElement) {
@@ -806,8 +823,24 @@ async function initGallery() {
         }
     });
     if (videoForwardBtn) videoForwardBtn.addEventListener("click", () => {
-        if (videoElement) videoElement.currentTime = Math.min(videoElement.duration, videoElement.currentTime + 1);
+        if (videoElement) {
+            if (!videoElement.paused) videoElement.pause();
+            // Move one frame forward
+            const frameDuration = 1 / (videoElement.frameRate || 25); // fallback to 25fps
+            videoElement.currentTime = Math.min(videoElement.duration, videoElement.currentTime + frameDuration);
+            redrawVideoIfPaused();
+        }
     });
+
+    // --- Add loop button event:
+    if (videoLoopBtn) {
+        videoLoopBtn.addEventListener("click", () => {
+            if (videoElement) {
+                videoElement.loop = !videoElement.loop;
+                videoLoopBtn.classList.toggle("active", videoElement.loop);
+            }
+        });
+    }
 
     if (setTitle) setTitle.textContent = set.title;
 
